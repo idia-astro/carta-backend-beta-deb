@@ -1,0 +1,5 @@
+carta-backend-ng for Debian
+
+This is the Debian package of the development version of the CARTA backend. The carta-backend package is used for release versions, starting with release 2.0.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 04 Feb 2021 14:53:27 +0200
