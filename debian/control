@@ -2,7 +2,7 @@ Source: carta-backend-ng
 Section: science
 Priority: optional
 Maintainer: Adrianna Pińska <adrianna.pinska@gmail.com>
-Build-Depends: cmake, debhelper (>=11~), casacore-dev (>= 2021.2.4), libzfp-dev, libcfitsio-dev, libcurl4-openssl-dev | libcurl4-gnutls-dev, libfmt-dev, libgrpc-dev, libgrpc++-dev, libgsl-dev, libhdf5-dev, libprotobuf-dev, libpugixml-dev, libtbb-dev, libzstd-dev, pkg-config, protobuf-compiler-grpc, wcslib-dev, uuid-dev
+Build-Depends: cmake, debhelper (>=11~), casacore-dev (>= 2021.2.4), libzfp-dev, libcfitsio-dev, libcurl4-openssl-dev | libcurl4-gnutls-dev, libfmt-dev, libgrpc-dev, libgrpc++-dev, libgsl-dev, libhdf5-dev, libprotobuf-dev, libpugixml-dev, libspdlog-dev, libtbb-dev, libzstd-dev, pkg-config, protobuf-compiler-grpc, wcslib-dev, uuid-dev
 Standards-Version: 4.1.4
 Homepage: https://github.com/CARTAvis/carta-backend
 Vcs-Browser: https://github.com/idia-astro/carta-backend-ng-deb
@@ -12,7 +12,7 @@ Package: carta-backend-ng
 Architecture: any
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends}
-Recommends: casacore-data
+Recommends: casacore-data, carta-frontend-ng (>= 2021.2.9)
 Description: CARTA - Cube Analysis and Rendering Tool for Astronomy
  CARTA is a next generation image visualization and analysis tool designed for ALMA, VLA, and SKA pathfinders.
  .
