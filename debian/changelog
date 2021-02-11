@@ -1,3 +1,9 @@
+carta-backend-ng (2021.2.10-1) focal; urgency=medium
+
+  * Rebuild with proposed executable path fix.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 09 Feb 2021 23:40:27 +0200
+
 carta-backend-ng (2021.2.9-1) focal; urgency=medium
 
   * Rebuild from latest upstream dev.
