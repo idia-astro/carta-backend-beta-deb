@@ -1,3 +1,9 @@
+carta-backend-ng (2021.2.11-1) focal; urgency=medium
+
+  * Added icons, wrapper and desktop file.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 11 Feb 2021 15:22:48 +0200
+
 carta-backend-ng (2021.2.10-1) focal; urgency=medium
 
   * Rebuild with proposed executable path fix.
