@@ -1,3 +1,9 @@
+carta-backend-ng (2021.2.19-2) focal; urgency=medium
+
+  * Removed carta-frontend from recommended dependencies (moved to metapackage)
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Feb 2021 21:03:54 +0200
+
 carta-backend-ng (2021.2.19-1) focal; urgency=medium
 
   * Rebuild after multiple upstream dev updates. We no longer depend on fmt and spdlog.
