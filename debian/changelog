@@ -1,3 +1,15 @@
+carta-backend-ng (2021.2.19-1) focal; urgency=medium
+
+  * Rebuild after multiple upstream dev updates. We no longer depend on fmt and spdlog.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Feb 2021 15:53:32 +0200
+
+carta-backend-ng (2021.2.17-1) focal; urgency=medium
+
+  * Rebuild with updated wrapper
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Wed, 17 Feb 2021 18:51:35 +0200
+
 carta-backend-ng (2021.2.15-1) focal; urgency=medium
 
   * Rebuild for new commandline options.
