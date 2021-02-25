@@ -1,47 +1,5 @@
-carta-backend-ng (2021.2.19-2) focal; urgency=medium
+carta-backend-beta (2021.2.25-1~focal1) focal; urgency=medium
 
-  * Removed carta-frontend from recommended dependencies (moved to metapackage)
+  * Initial build of renamed package, from latest upstream development branch.
 
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Feb 2021 21:03:54 +0200
-
-carta-backend-ng (2021.2.19-1) focal; urgency=medium
-
-  * Rebuild after multiple upstream dev updates. We no longer depend on fmt and spdlog.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Feb 2021 15:53:32 +0200
-
-carta-backend-ng (2021.2.17-1) focal; urgency=medium
-
-  * Rebuild with updated wrapper
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Wed, 17 Feb 2021 18:51:35 +0200
-
-carta-backend-ng (2021.2.15-1) focal; urgency=medium
-
-  * Rebuild for new commandline options.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Mon, 15 Feb 2021 11:28:33 +0200
-
-carta-backend-ng (2021.2.11-1) focal; urgency=medium
-
-  * Added icons, wrapper and desktop file.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 11 Feb 2021 15:22:48 +0200
-
-carta-backend-ng (2021.2.10-1) focal; urgency=medium
-
-  * Rebuild with proposed executable path fix.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 09 Feb 2021 23:40:27 +0200
-
-carta-backend-ng (2021.2.9-1) focal; urgency=medium
-
-  * Rebuild from latest upstream dev.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 09 Feb 2021 16:05:56 +0200
-
-carta-backend-ng (2021.2.4-1) focal; urgency=medium
-
-  * Initial release.
-
- -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 04 Feb 2021 14:53:27 +0200
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 25 Feb 2021 15:16:02 +0200
