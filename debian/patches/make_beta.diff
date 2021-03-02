@@ -1,0 +1,46 @@
+This renames the executables and looks in a different frontend directory, so that the development packages can be installed alongside the release packages.
+Index: carta-backend-beta-2021.2.25/CMakeLists.txt
+===================================================================
+--- carta-backend-beta-2021.2.25.orig/CMakeLists.txt
++++ carta-backend-beta-2021.2.25/CMakeLists.txt
+@@ -177,11 +177,14 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux"
+     target_link_libraries(carta_backend ${LINK_LIBS})
+ endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+ 
++set_target_properties(carta_backend PROPERTIES SUFFIX "_beta")
++
+ install(TARGETS carta_backend
+     RUNTIME DESTINATION bin)
+ 
+ install(PROGRAMS "${CMAKE_SOURCE_DIR}/scripts/carta"
+-    DESTINATION bin)
++    DESTINATION bin
++    RENAME carta_beta)
+ 
+ # Tests
+ option(test "Build tests." OFF)
+Index: carta-backend-beta-2021.2.25/scripts/carta
+===================================================================
+--- carta-backend-beta-2021.2.25.orig/scripts/carta
++++ carta-backend-beta-2021.2.25/scripts/carta
+@@ -10,4 +10,4 @@ fi
+ 
+ export SERVER_IP
+ 
+-carta_backend $@
++carta_backend_beta $@
+Index: carta-backend-beta-2021.2.25/static/carta.desktop
+===================================================================
+--- carta-backend-beta-2021.2.25.orig/static/carta.desktop
++++ carta-backend-beta-2021.2.25/static/carta.desktop
+@@ -1,8 +1,8 @@
+ [Desktop Entry]
+ Type=Application
+-Name=CARTA
++Name=CARTA (beta)
+ GenericName=Cube Analysis and Rendering Tool for Astronomy
+-Exec=carta
++Exec=carta_beta --frontend_folder /usr/share/carta_beta/frontend
+ Terminal=true
+ Icon=cartaviewer
+ Categories=Science

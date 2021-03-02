@@ -1,3 +1,9 @@
+carta-backend-beta (2021.2.25-2~focal1) focal; urgency=medium
+
+  * Rebuild to be installable in parallel with release version.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 02 Mar 2021 18:01:29 +0200
+
 carta-backend-beta (2021.2.25-1~focal1) focal; urgency=medium
 
   * Initial build of renamed package, from latest upstream development branch.
