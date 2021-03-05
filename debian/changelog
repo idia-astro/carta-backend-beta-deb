@@ -1,3 +1,10 @@
+carta-backend-beta (2021.3.5-1~focal1) focal; urgency=medium
+
+  * Rebuild from upstream dev tag v2.0.0-dev.21.03.05.
+  * Built to use different user directory and default frontend folder to avoid clash with release package.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 05 Mar 2021 12:11:32 +0200
+
 carta-backend-beta (2021.3.3-1~focal1) focal; urgency=medium
 
   * Rebuild to be installable in parallel with release version. Bump to latest upstream dev.
