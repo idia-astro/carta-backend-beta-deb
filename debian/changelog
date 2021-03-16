@@ -1,3 +1,27 @@
+carta-backend-beta (2.0+2021.3.5-1~focal4) focal; urgency=medium
+
+  * Fix dependency issue.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 16 Mar 2021 17:33:22 +0200
+
+carta-backend-beta (2.0+2021.3.5-1~focal3) focal; urgency=medium
+
+  * Fix build issue.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 16 Mar 2021 16:22:36 +0200
+
+carta-backend-beta (2.0+2021.3.5-1~focal2) focal; urgency=medium
+
+  * Rebuild to stop renaming executables and file paths; add conflict with release package.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 16 Mar 2021 15:51:22 +0200
+
+carta-backend-beta (2.0+2021.3.5-1~focal1) focal; urgency=medium
+
+  * Rebuild for new PPA with revised version numbering.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 16 Mar 2021 11:48:01 +0200
+
 carta-backend-beta (2021.3.5-1~focal1) focal; urgency=medium
 
   * Rebuild from upstream dev tag v2.0.0-dev.21.03.05.
