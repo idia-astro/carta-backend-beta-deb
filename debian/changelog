@@ -1,3 +1,15 @@
+carta-backend-beta (2.0+2021.3.5-1~bionic2) bionic; urgency=medium
+
+  * Build with gcc/g++ 8 instead of adding a Boost dependency.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Mar 2021 17:12:13 +0200
+
+carta-backend-beta (2.0+2021.3.5-1~bionic1) bionic; urgency=medium
+
+  * Backport to Bionic.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Fri, 19 Mar 2021 13:23:46 +0200
+
 carta-backend-beta (2.0+2021.3.5-1~focal4) focal; urgency=medium
 
   * Fix dependency issue.
