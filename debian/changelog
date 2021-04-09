@@ -1,3 +1,9 @@
+carta-backend-beta (2.0+2021.4.6-1~focal2) focal; urgency=medium
+
+  * Rebuild with updated carta-casacore package dependencies.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 08 Apr 2021 12:52:50 +0200
+
 carta-backend-beta (2.0+2021.4.6-1~focal1) focal; urgency=medium
 
   * Rebuild from upstream version v2.0.0-dev.21.04.06.
