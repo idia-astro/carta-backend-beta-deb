@@ -1,4 +1,4 @@
-carta-backend-beta (2.0+2021.4.27-1~focal1) focal; urgency=medium
+carta-backend-beta (2.0+2021.4.27-1~bionic1) bionic; urgency=medium
 
   * Rebuild from upstream version v2.0.0-dev.21.04.27.
 
