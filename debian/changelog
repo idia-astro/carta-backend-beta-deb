@@ -1,3 +1,9 @@
+carta-backend-beta (2.0+2021.4.27-1~focal1) focal; urgency=medium
+
+  * Rebuild from upstream version v2.0.0-dev.21.04.27.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Wed, 28 Apr 2021 15:48:34 +0200
+
 carta-backend-beta (2.0+2021.4.21-1~bionic1) bionic; urgency=medium
 
   * Rebuild from upstream version v2.0.0-dev.21.04.21.
