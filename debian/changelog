@@ -1,3 +1,9 @@
+carta-backend-beta (2.0+2021.5.10+fixed1-1~focal1) focal; urgency=medium
+
+  * Rebuild from correct tag.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Mon, 10 May 2021 10:58:09 +0200
+
 carta-backend-beta (2.0+2021.5.10-1~focal1) focal; urgency=medium
 
   * Bumped version to v2.0.0-beta.1 for the 2.0 beta.
