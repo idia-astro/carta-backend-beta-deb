@@ -189,6 +189,7 @@ set(LINK_LIBS
         cfitsio
         pugixml
         curl
+        wcs
         casa_casa
         casa_coordinates
         casa_tables
@@ -223,6 +224,7 @@ set(SOURCE_FILES
         src/ImageData/Hdf5Loader.cc
         src/ImageData/CartaHdf5Image.cc
         src/ImageData/CartaMiriadImage.cc
+        src/ImageData/CartaFitsImage.cc
         src/ImageData/StokesFilesConnector.cc
         src/Region/RegionHandler.cc
         src/Region/RegionImportExport.cc
@@ -237,6 +239,7 @@ set(SOURCE_FILES
         src/Table/TableView.cc
         src/Table/TableController.cc
         src/Moment/MomentGenerator.cc
+        src/Timer/ListProgressReporter.cc
         src/Timer/Timer.cc
         src/SessionManager/ProgramSettings.cc
         src/OnMessageTask.cc
