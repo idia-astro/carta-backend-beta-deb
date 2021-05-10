@@ -1,3 +1,9 @@
+carta-backend-beta (2.0+2021.5.10+fixed1-1~bionic1) bionic; urgency=medium
+
+  * Rebuild from correct v2.0.0-beta.0 tag after fixing upstream tags.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Mon, 10 May 2021 10:58:09 +0200
+
 carta-backend-beta (2.0+2021.5.10-1~bionic1) bionic; urgency=medium
 
   * Bumped version to v2.0.0-beta.1 for the 2.0 beta.
