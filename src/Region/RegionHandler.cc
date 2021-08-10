@@ -677,6 +677,7 @@ bool RegionHandler::ApplyRegionToFile(int region_id, int file_id, const AxisRang
 
     try {
         casacore::LCRegion* applied_region = ApplyRegionToFile(region_id, file_id);
+        casacore::IPosition image_shape(_frames.at(file_id)->ImageShape());
         if (applied_region == nullptr) {
             return false;
         }
