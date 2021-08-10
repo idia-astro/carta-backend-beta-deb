@@ -133,9 +133,9 @@ bool IsCompressedFits(const std::string& filename) {
     // Check if gzip file, then check .fits extension
     bool is_fits(false);
     auto magic_number = GetMagicNumber(filename);
-    if ((magic_number == GZ_MAGIC_NUMBER) || (magic_number == BZ_MAGIC_NUMBER)) {
-        fs::path bgz_path(filename);
-        is_fits = (bgz_path.stem().extension().string() == ".fits");
+    if (magic_number == GZ_MAGIC_NUMBER) {
+        fs::path gz_path(filename);
+        is_fits = (gz_path.stem().extension().string() == ".fits");
     }
 
     return is_fits;
@@ -286,7 +286,7 @@ void FillSpectralProfileDataMessage(CARTA::SpectralProfileData& profile_message,
 }
 
 void FillStatisticsValuesFromMap(
-    CARTA::RegionStatsData& stats_data, vector<CARTA::StatsType>& required_stats, map<CARTA::StatsType, double>& stats_value_map) {
+    CARTA::RegionStatsData& stats_data, const vector<CARTA::StatsType>& required_stats, map<CARTA::StatsType, double>& stats_value_map) {
     // inserts values from map into message StatisticsValue field; needed by Frame and RegionDataHandler
     for (auto type : required_stats) {
         double value(0.0); // default
@@ -383,17 +383,31 @@ bool ValidateAuthToken(uWS::HttpRequest* http_request, const string& required_to
     string auth_header = string(http_request->getHeader("authorization"));
     regex auth_regex(R"(^Bearer\s+(\S+)$)");
     smatch sm;
-    if (regex_search(auth_header, sm, auth_regex) && sm.size() == 2 && sm[1] == required_token) {
+    if (regex_search(auth_header, sm, auth_regex) && sm.size() == 2 && ConstantTimeStringCompare(sm[1], required_token)) {
         return true;
     }
 
     // Try the URL query
     auto query_token = http_request->getQuery("token");
-    if (!query_token.empty() && query_token == required_token) {
+    if (!query_token.empty() && ConstantTimeStringCompare(string(query_token), required_token)) {
         return true;
     }
     // Finally, fall back to the non-standard auth token header
-    return string(http_request->getHeader("carta-auth-token")) == required_token;
+    return ConstantTimeStringCompare(string(http_request->getHeader("carta-auth-token")), required_token);
+}
+
+bool ConstantTimeStringCompare(const std::string& a, const std::string& b) {
+    // Early exit when lengths are unequal. This is not a problem in our case
+    if (a.length() != b.length()) {
+        return false;
+    }
+
+    volatile int d = 0;
+    for (int i = 0; i < a.length(); i++) {
+        d |= a[i] ^ b[i];
+    }
+
+    return d == 0;
 }
 
 bool FindExecutablePath(string& path) {
@@ -415,4 +429,33 @@ bool FindExecutablePath(string& path) {
 #endif
     path = path_buffer;
     return true;
+}
+
+int GetNumItems(const string& path) {
+    try {
+        int counter = 0;
+        auto it = fs::directory_iterator(path);
+        for (const auto f : it) {
+            counter++;
+        }
+        return counter;
+    } catch (exception) {
+        return -1;
+    }
+}
+
+// quick alternative to bp::search_path that allows us to remove
+// boost:filesystem dependency
+fs::path SearchPath(std::string filename) {
+    std::string path(std::getenv("PATH"));
+    std::vector<std::string> path_strings;
+    SplitString(path, ':', path_strings);
+    for (auto& p : path_strings) {
+        fs::path base_path(p);
+        base_path /= filename;
+        if (fs::exists(base_path)) {
+            return base_path;
+        }
+    }
+    return fs::path();
 }

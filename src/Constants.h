@@ -10,7 +10,7 @@
 #define CARTA_BACKEND__CONSTANTS_H_
 
 // version
-#define VERSION_ID "2.0.0"
+#define VERSION_ID "3.0.0-beta.1"
 
 // thread counts
 #define OMP_THREAD_COUNT -1
@@ -25,6 +25,12 @@
 #define CURSOR_REGION_ID 0
 #define ALL_REGIONS -10
 
+// x axis
+#define ALL_X -2
+
+// y axis
+#define ALL_Y -2
+
 // z axis
 #define DEFAULT_Z 0
 #define CURRENT_Z -1
@@ -37,6 +43,9 @@
 
 // raster image data
 #define MAX_SUBSETS 8
+#define TILE_SIZE 256
+#define CHUNK_SIZE 512
+#define MAX_TILE_CACHE_CAPACITY 4096
 
 // histograms
 #define AUTO_BIN_SIZE -1
@@ -91,9 +100,5 @@
 #ifndef CARTA_DEFAULT_FRONTEND_FOLDER
 #define CARTA_DEFAULT_FRONTEND_FOLDER "../share/carta/frontend"
 #endif
-
-// Schema URLs
-#define CARTA_PREFERENCES_SCHEMA_URL "https://cartavis.github.io/schemas/preference_schema_1.json"
-#define CARTA_LAYOUT_SCHEMA_URL "https://cartavis.github.io/schemas/layout_schema_2.json"
 
 #endif // CARTA_BACKEND__CONSTANTS_H_

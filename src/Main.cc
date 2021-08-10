@@ -24,6 +24,7 @@
 #include "OnMessageTask.h"
 #include "Session.h"
 #include "SessionManager/ProgramSettings.h"
+#include "SessionManager/WebBrowser.h"
 #include "SimpleFrontendServer/SimpleFrontendServer.h"
 #include "Threading.h"
 #include "Util.h"
@@ -45,12 +46,6 @@ static string auth_token = "";
 carta::ProgramSettings settings;
 // Sessions map
 std::unordered_map<uint32_t, Session*> sessions;
-
-// Apply ws->getUserData and return one of these
-struct PerSocketData {
-    uint32_t session_id;
-    string address;
-};
 
 void DeleteSession(int session_id) {
     Session* session = sessions[session_id];
@@ -99,8 +94,8 @@ void OnUpgrade(uWS::HttpResponse<false>* http_response, uWS::HttpRequest* http_r
 }
 
 // Called on connection. Creates session objects and assigns UUID to it
-void OnConnect(uWS::WebSocket<false, true>* ws) {
-    auto socket_data = static_cast<PerSocketData*>(ws->getUserData());
+void OnConnect(uWS::WebSocket<false, true, PerSocketData>* ws) {
+    auto socket_data = ws->getUserData();
     if (!socket_data) {
         spdlog::error("Error handling WebSocket connection: Socket data does not exist");
         return;
@@ -126,7 +121,7 @@ void OnConnect(uWS::WebSocket<false, true>* ws) {
 }
 
 // Called on disconnect. Cleans up sessions. In future, we may want to delay this (in case of unintentional disconnects)
-void OnDisconnect(uWS::WebSocket<false, true>* ws, int code, std::string_view message) {
+void OnDisconnect(uWS::WebSocket<false, true, PerSocketData>* ws, int code, std::string_view message) {
     // Skip server-forced disconnects
 
     spdlog::debug("WebSocket closed with code {} and message '{}'.", code, message);
@@ -145,8 +140,8 @@ void OnDisconnect(uWS::WebSocket<false, true>* ws, int code, std::string_view me
     ws->close();
 }
 
-void OnDrain(uWS::WebSocket<false, true>* ws) {
-    uint32_t session_id = static_cast<PerSocketData*>(ws->getUserData())->session_id;
+void OnDrain(uWS::WebSocket<false, true, PerSocketData>* ws) {
+    uint32_t session_id = ws->getUserData()->session_id;
     Session* session = sessions[session_id];
     if (session) {
         spdlog::debug("Draining WebSocket backpressure: client {} [{}]. Remaining buffered amount: {} (bytes).", session->GetId(),
@@ -157,7 +152,7 @@ void OnDrain(uWS::WebSocket<false, true>* ws) {
 }
 
 // Forward message requests to session callbacks after parsing message into relevant ProtoBuf message
-void OnMessage(uWS::WebSocket<false, true>* ws, std::string_view sv_message, uWS::OpCode op_code) {
+void OnMessage(uWS::WebSocket<false, true, PerSocketData>* ws, std::string_view sv_message, uWS::OpCode op_code) {
     uint32_t session_id = static_cast<PerSocketData*>(ws->getUserData())->session_id;
     Session* session = sessions[session_id];
     if (!session) {
@@ -286,6 +281,10 @@ void OnMessage(uWS::WebSocket<false, true>* ws, std::string_view sv_message, uWS
                 case CARTA::EventType::OPEN_FILE: {
                     CARTA::OpenFile message;
                     if (message.ParseFromArray(event_buf, event_length)) {
+                        for (auto& session : sessions) {
+                            session.second->CloseCachedImage(message.directory(), message.file());
+                        }
+
                         session->OnOpenFile(message, head.request_id);
                     } else {
                         spdlog::warn("Bad OPEN_FILE message!");
@@ -421,6 +420,15 @@ void OnMessage(uWS::WebSocket<false, true>* ws, std::string_view sv_message, uWS
                     }
                     break;
                 }
+                case CARTA::EventType::SPLATALOGUE_PING: {
+                    CARTA::SplataloguePing message;
+                    if (message.ParseFromArray(event_buf, event_length)) {
+                        tsk = new (tbb::task::allocate_root(session->Context())) OnSplataloguePingTask(session, head.request_id);
+                    } else {
+                        spdlog::warn("Bad SPLATALOGUE_PING message!\n");
+                    }
+                    break;
+                }
                 case CARTA::EventType::SPECTRAL_LINE_REQUEST: {
                     CARTA::SpectralLineRequest message;
                     if (message.ParseFromArray(event_buf, event_length)) {
@@ -498,8 +506,26 @@ int StartGrpcService(int grpc_port) {
     // Listen on the given address without any authentication mechanism.
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials(), &selected_port);
 
+    std::string grpc_token = "";
+    bool fixed_grpc_token(false);
+
+    if (!settings.debug_no_auth) {
+        auto env_entry = getenv("CARTA_GRPC_TOKEN");
+
+        if (env_entry) {
+            grpc_token = env_entry;
+            fixed_grpc_token = true;
+        } else {
+            uuid_t token;
+            char token_string[37];
+            uuid_generate_random(token);
+            uuid_unparse(token, token_string);
+            grpc_token += token_string;
+        }
+    }
+
     // Register and start carta grpc server
-    carta_grpc_service = std::unique_ptr<CartaGrpcService>(new CartaGrpcService());
+    carta_grpc_service = std::unique_ptr<CartaGrpcService>(new CartaGrpcService(grpc_token));
     builder.RegisterService(carta_grpc_service.get());
     // By default ports can be reused; we don't want this
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
@@ -507,6 +533,9 @@ int StartGrpcService(int grpc_port) {
 
     if (selected_port > 0) { // available port found
         spdlog::info("CARTA gRPC service available at 0.0.0.0:{}", selected_port);
+        if (!fixed_grpc_token && !settings.debug_no_auth) {
+            spdlog::info("CARTA gRPC token: {}", grpc_token);
+        }
         // Turn logging back on
         gpr_set_log_function(gpr_default_log);
         return 0;
@@ -693,29 +722,17 @@ int main(int argc, char* argv[]) {
                 if (!query_url.empty()) {
                     frontend_url += query_url;
                 }
+
                 if (!settings.no_browser) {
-                    if (settings.browser.size() > 0) {
-                        auto cmd = settings.GenerateBrowserCommand(frontend_url);
-                        auto cmd_result = system(cmd.c_str());
-                        if (cmd_result) {
-                            spdlog::warn("Failed to open the browser. Check the custom input at --browser.");
-                        }
-                    } else {
-#if defined(__APPLE__)
-                        string open_command = "open";
-#else
-                        string open_command = "xdg-open";
-#endif
-                        auto open_result = system(fmt::format("{} \"{}\"", open_command, frontend_url).c_str());
-                        if (open_result) {
-                            spdlog::warn("Failed to open the default browser automatically.");
-                        }
+                    WebBrowser wb(frontend_url, settings.browser);
+                    if (!wb.Status()) {
+                        spdlog::warn(wb.Error());
                     }
                 }
                 spdlog::info("CARTA is accessible at {}", frontend_url);
             }
 
-            app.ws<PerSocketData>("/*", (uWS::App::WebSocketBehavior){.compression = uWS::DEDICATED_COMPRESSOR_256KB,
+            app.ws<PerSocketData>("/*", (uWS::App::WebSocketBehavior<PerSocketData>){.compression = uWS::DEDICATED_COMPRESSOR_256KB,
                                             .maxPayloadLength = 256 * 1024 * 1024,
                                             .maxBackpressure = MAX_BACKPRESSURE,
                                             .upgrade = OnUpgrade,

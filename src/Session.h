@@ -56,9 +56,14 @@
 #include "Table/TableController.h"
 #include "Util.h"
 
+struct PerSocketData {
+    uint32_t session_id;
+    string address;
+};
+
 class Session {
 public:
-    Session(uWS::WebSocket<false, true>* ws, uWS::Loop* loop, uint32_t id, std::string address, std::string top_level_folder,
+    Session(uWS::WebSocket<false, true, PerSocketData>* ws, uWS::Loop* loop, uint32_t id, std::string address, std::string top_level_folder,
         std::string starting_folder, FileListHandler* file_list_handler, int grpc_port = -1, bool read_only_mode = false);
     ~Session();
 
@@ -90,6 +95,7 @@ public:
     void OnOpenCatalogFile(CARTA::OpenCatalogFile open_file_request, uint32_t request_id, bool silent = false);
     void OnCloseCatalogFile(CARTA::CloseCatalogFile close_file_request);
     void OnCatalogFilter(CARTA::CatalogFilterRequest filter_request, uint32_t request_id);
+    void OnSplataloguePing(uint32_t request_id);
     void OnSpectralLineRequest(CARTA::SpectralLineRequest spectral_line_request, uint32_t request_id);
     void OnMomentRequest(const CARTA::MomentRequest& moment_request, uint32_t request_id);
     void OnStopMomentCalc(const CARTA::StopMomentCalc& stop_moment_calc);
@@ -201,7 +207,8 @@ public:
     FileSettings _file_settings;
     std::unordered_map<int, tbb::concurrent_queue<std::pair<CARTA::SetImageChannels, uint32_t>>> _set_channel_queues;
 
-    void SendScriptingRequest(uint32_t scripting_request_id, std::string target, std::string action, std::string parameters, bool async);
+    void SendScriptingRequest(
+        uint32_t scripting_request_id, std::string target, std::string action, std::string parameters, bool async, std::string return_path);
     void OnScriptingResponse(const CARTA::ScriptingResponse& message, uint32_t request_id);
     bool GetScriptingResponse(uint32_t scripting_request_id, CARTA::script::ActionReply* reply);
 
@@ -211,13 +218,19 @@ public:
     void UpdateLastMessageTimestamp();
     std::chrono::high_resolution_clock::time_point GetLastMessageTimestamp();
 
+    // Close cached image if it has been updated
+    void CloseCachedImage(const std::string& directory, const std::string& file);
+
 private:
     // File info for file list (extended info for each hdu_name)
     bool FillExtendedFileInfo(std::map<std::string, CARTA::FileInfoExtended>& hdu_info_map, CARTA::FileInfo& file_info,
-        const std::string& folder, const std::string& filename, const std::string& hdu_name, std::string& message);
+        const std::string& folder, const std::string& filename, const std::string& hdu, std::string& message);
     // File info for open file
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA::FileInfo& file_info, const std::string& folder,
-        const std::string& filename, const std::string& hdu_name, std::string& message);
+        const std::string& filename, std::string& hdu_name, std::string& message);
+    bool FillFileInfo(
+        CARTA::FileInfo& file_info, const std::string& folder, const std::string& filename, std::string& fullname, std::string& message);
+
     // File info for open moments image (not disk image)
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, std::shared_ptr<casacore::ImageInterface<float>> image,
         const std::string& filename, std::string& message);
@@ -227,11 +240,13 @@ private:
 
     // Specialized for cube; accumulate per-z histograms and send progress messages
     bool CalculateCubeHistogram(int file_id, CARTA::RegionHistogramData& cube_histogram_message);
-    void CreateCubeHistogramMessage(CARTA::RegionHistogramData& msg, int file_id, int stokes, float progress);
+    void CreateCubeHistogramMessage(CARTA::RegionHistogramData& msg, int file_id, int channel, int stokes, float progress);
 
     // Send data streams
     bool SendContourData(int file_id, bool ignore_empty = true);
     bool SendSpatialProfileData(int file_id, int region_id);
+    void SendSpatialProfileDataByFileId(int file_id);
+    void SendSpatialProfileDataByRegionId(int region_id);
     bool SendRegionHistogramData(int file_id, int region_id);
     bool SendRegionStatsData(int file_id, int region_id);
     void UpdateImageData(int file_id, bool send_image_histogram, bool z_changed, bool stokes_changed);
@@ -244,7 +259,7 @@ private:
     void SendLogEvent(const std::string& message, std::vector<std::string> tags, CARTA::ErrorSeverity severity);
 
     // uWebSockets
-    uWS::WebSocket<false, true>* _socket;
+    uWS::WebSocket<false, true, PerSocketData>* _socket;
     uWS::Loop* _loop;
 
     uint32_t _id;
