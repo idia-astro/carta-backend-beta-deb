@@ -36,6 +36,8 @@ option(EnableAvx "Enable AVX codepaths instead of SSE4" OFF)
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" AND ${CMAKE_SYSTEM_NAME} MATCHES "Darwin") 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_ARM_ARCH_ -march=armv8-a+fp+simd+crypto+crc")
+elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" AND ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_ARM_ARCH_ -march=armv8-a+fp+simd+crypto+crc")
 elseif (EnableAvx)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
 else ()
@@ -111,7 +113,7 @@ else ()
     endif ()
 endif()
 
-FIND_PACKAGE(HDF5)
+FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 FIND_PACKAGE(Protobuf REQUIRED)
 FIND_PACKAGE(Threads)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
@@ -226,6 +228,7 @@ set(SOURCE_FILES
         src/ImageData/CartaMiriadImage.cc
         src/ImageData/CartaFitsImage.cc
         src/ImageData/StokesFilesConnector.cc
+        src/ImageData/CompressedFits.cc
         src/Region/RegionHandler.cc
         src/Region/RegionImportExport.cc
         src/Region/CrtfImportExport.cc
@@ -242,9 +245,11 @@ set(SOURCE_FILES
         src/Timer/ListProgressReporter.cc
         src/Timer/Timer.cc
         src/SessionManager/ProgramSettings.cc
+        src/SessionManager/WebBrowser.cc
         src/OnMessageTask.cc
         src/FileSettings.cc
         src/Util.cc
+        src/TileCache.cc
         src/Threading.cc
         src/SimpleFrontendServer/SimpleFrontendServer.cc)
 

@@ -186,7 +186,7 @@ void ProgramSettings::ApplyCommandLineSettings(int argc, char** argv) {
         ("log_protocol_messages", "enable protocol message debug logs", cxxopts::value<bool>())
         ("no_http", "disable frontend HTTP server", cxxopts::value<bool>())
         ("no_browser", "don't open the frontend URL in a browser on startup", cxxopts::value<bool>())
-        ("browser", "[experimental] custom browser command", cxxopts::value<string>(), "<browser>")
+        ("browser", "custom browser command", cxxopts::value<string>(), "<browser>")
         ("host", "only listen on the specified interface (IP address or hostname)", cxxopts::value<string>(), "<interface>")
         ("p,port", fmt::format("manually set the HTTP and WebSocket port (default: {} or nearest available port)", DEFAULT_SOCKET_PORT), cxxopts::value<std::vector<int>>(), "<port>")
         ("g,grpc_port", "set gRPC service port", cxxopts::value<int>(), "<port>")
@@ -202,7 +202,7 @@ void ProgramSettings::ApplyCommandLineSettings(int argc, char** argv) {
         ("no_system_config", "ignore system configuration file", cxxopts::value<bool>());
 
     options.add_options("Deprecated and debug")
-        ("debug_no_auth", "accept all incoming WebSocket connections on the specified port (not secure; use with caution!)", cxxopts::value<bool>())
+        ("debug_no_auth", "accept all incoming WebSocket and gRPC connections on the specified port(s) (not secure; use with caution!)", cxxopts::value<bool>())
         ("threads", "[deprecated] no longer supported", cxxopts::value<int>(), "<threads>")
         ("base", "[deprecated] set starting folder for data files (use the positional parameter instead)", cxxopts::value<string>(), "<dir>")
         ("root", "[deprecated] use 'top_level_folder' instead", cxxopts::value<string>(), "<dir>");
@@ -288,9 +288,9 @@ end.
     applyOptionalArgument(grpc_port, "grpc_port", result);
 
     applyOptionalArgument(omp_thread_count, "omp_threads", result);
-
     applyOptionalArgument(wait_time, "exit_timeout", result);
     applyOptionalArgument(init_wait_time, "initial_timeout", result);
+
     applyOptionalArgument(idle_session_wait_time, "idle_timeout", result);
 
     applyOptionalArgument(browser, "browser", result);
