@@ -1,3 +1,10 @@
+carta-backend-beta (3.0+2021.10.19-1~bionic1) bionic; urgency=medium
+
+  * Special conference version with fixed spectral matching. Upstream commit 
+    d1c2055e92baeffe18fb2aafa4264348fe600ff6. Full changelog to follow in next release.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 19 Oct 2021 11:03:07 +0200
+
 carta-backend-beta (3.0+2021.8.12-1~bionic1) bionic; urgency=medium
 
   * Built with a custom user directory (.carta-beta)
