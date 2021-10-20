@@ -1,0 +1,14 @@
+Patch the version for the fixed ADASS beta release
+Index: carta-backend-beta-3.0+2021.10.19/src/Util/App.h
+===================================================================
+--- carta-backend-beta-3.0+2021.10.19.orig/src/Util/App.h
++++ carta-backend-beta-3.0+2021.10.19/src/Util/App.h
+@@ -10,7 +10,7 @@
+ #include <string>
+ 
+ // version
+-#define VERSION_ID "3.0.0-beta.1b"
++#define VERSION_ID "3.0.0-beta.1c"
+ 
+ bool FindExecutablePath(std::string& path);
+ 
