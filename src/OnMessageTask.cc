@@ -5,10 +5,11 @@
 */
 
 #include "OnMessageTask.h"
+#include "Threading.h"
 
 #include <algorithm>
 
-tbb::task* SetImageChannelsTask::execute() {
+OnMessageTask* SetImageChannelsTask::execute() {
     std::pair<CARTA::SetImageChannels, uint32_t> request_pair;
     bool tester;
 
@@ -24,38 +25,49 @@ tbb::task* SetImageChannelsTask::execute() {
     return nullptr;
 }
 
-tbb::task* SetCursorTask::execute() {
+OnMessageTask* SetCursorTask::execute() {
     _session->_file_settings.ExecuteOne("SET_CURSOR", _file_id);
     return nullptr;
 }
 
-tbb::task* AnimationTask::execute() {
+OnMessageTask* AnimationTask::execute() {
     if (_session->ExecuteAnimationFrame()) {
         if (_session->CalculateAnimationFlowWindow() > _session->CurrentFlowWindowSize()) {
             _session->SetWaitingTask(true);
         } else {
-            increment_ref_count();
-            recycle_as_safe_continuation();
-        }
-    } else {
-        if (!_session->WaitingFlowEvent()) {
-            _session->CancelAnimation();
+            ThreadManager::QueueTask(new AnimationTask(_session));
         }
     }
+
+    _session->SetAnimationActive(false);
     return nullptr;
 }
 
-tbb::task* RegionDataStreamsTask::execute() {
+OnMessageTask* StartAnimationTask::execute() {
+    OnMessageTask* tsk;
+    if (_session->AnimationActive()) {
+        tsk = new StartAnimationTask(_session, _msg, _msg_id);
+    } else {
+        _session->SetAnimationActive(true);
+        _session->BuildAnimationObject(_msg, _msg_id);
+        tsk = new AnimationTask(_session);
+    }
+    ThreadManager::QueueTask(tsk);
+
+    return nullptr;
+}
+
+OnMessageTask* RegionDataStreamsTask::execute() {
     _session->RegionDataStreams(_file_id, _region_id);
     return nullptr;
 }
 
-tbb::task* SpectralProfileTask::execute() {
+OnMessageTask* SpectralProfileTask::execute() {
     _session->SendSpectralProfileData(_file_id, _region_id);
     return nullptr;
 }
 
-tbb::task* OnSplataloguePingTask::execute() {
+OnMessageTask* OnSplataloguePingTask::execute() {
     _session->OnSplataloguePing(_request_id);
     return nullptr;
 }

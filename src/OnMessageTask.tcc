@@ -9,7 +9,7 @@
 
 template <typename T>
 class GeneralMessageTask : public OnMessageTask {
-    tbb::task* execute() {
+    OnMessageTask* execute() {
         if constexpr (std::is_same_v<T, CARTA::SetHistogramRequirements>) {
             _session->OnSetHistogramRequirements(_message, _request_id);
         } else if constexpr (std::is_same_v<T, CARTA::AddRequiredTiles>) {
@@ -30,6 +30,8 @@ class GeneralMessageTask : public OnMessageTask {
             _session->OnRegionListRequest(_message, _request_id);
         } else if constexpr (std::is_same_v<T, CARTA::CatalogListRequest>) {
             _session->OnCatalogFileList(_message, _request_id);
+        } else if constexpr (std::is_same_v<T, CARTA::PvRequest>) {
+            _session->OnPvRequest(_message, _request_id);
         } else {
             spdlog::warn("Bad event type for GeneralMessageTask!");
         }

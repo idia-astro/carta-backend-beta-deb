@@ -70,6 +70,7 @@ else ()
     PKG_SEARCH_MODULE(CFITSIO REQUIRED cfitsio)
     if (CFITSIO_FOUND)
         message(STATUS "Found cfitsio using pkg-config")
+        include_directories (${CFITSIO_INCLUDE_DIRS})
     else ()
         message(FATAL_ERROR "Could not find cfitsio")
     endif ()
@@ -100,18 +101,6 @@ if (ZSTD_FOUND)
 else ()
     message(FATAL_ERROR "Could not find zstd")
 endif ()
-
-FIND_PACKAGE(TBB QUIET)
-if (TBB_FOUND)
-    message(STATUS "Found TBB using find_package")
-else ()
-    PKG_SEARCH_MODULE(TBB REQUIRED tbb)
-    if (TBB_FOUND)
-        message(STATUS "Found TBB using pkg-config")
-    else()
-        message(FATAL_ERROR "TBB not found")
-    endif ()
-endif()
 
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 FIND_PACKAGE(Protobuf REQUIRED)
@@ -187,7 +176,6 @@ set(LINK_LIBS
         z
         zfp
         zstd
-        tbb
         cfitsio
         pugixml
         curl
@@ -241,7 +229,8 @@ set(SOURCE_FILES
         src/Table/Table.cc
         src/Table/TableView.cc
         src/Table/TableController.cc
-        src/Moment/MomentGenerator.cc
+        src/ImageGenerators/MomentGenerator.cc
+        src/ImageGenerators/PvGenerator.cc
         src/Timer/ListProgressReporter.cc
         src/Timer/Timer.cc
         src/SessionManager/ProgramSettings.cc

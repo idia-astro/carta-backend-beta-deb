@@ -40,7 +40,7 @@ struct RegionState {
     std::vector<CARTA::Point> control_points;
     float rotation;
 
-    RegionState() {}
+    RegionState() : reference_file_id(-1), type(CARTA::RegionType::POINT), rotation(0) {}
     RegionState(int ref_file_id_, CARTA::RegionType type_, std::vector<CARTA::Point> control_points_, float rotation_)
         : reference_file_id(ref_file_id_), type(type_), control_points(control_points_), rotation(rotation_) {}
 
@@ -117,12 +117,17 @@ public:
         return ((type == CARTA::RegionType::LINE) || (type == CARTA::RegionType::POLYLINE));
     }
 
+    inline casacore::CoordinateSystem* CoordinateSystem() {
+        return _coord_sys;
+    }
+
     // Communication
     bool IsConnected();
     void WaitForTaskCancellation();
 
     // Converted region as approximate LCPolygon and its mask
-    casacore::LCRegion* GetImageRegion(int file_id, const casacore::CoordinateSystem& image_csys, const casacore::IPosition& image_shape);
+    casacore::LCRegion* GetImageRegion(
+        int file_id, const casacore::CoordinateSystem& image_csys, const casacore::IPosition& image_shape, bool report_error = true);
     casacore::ArrayLattice<casacore::Bool> GetImageRegionMask(int file_id);
 
     // Converted region in Record for export
@@ -167,7 +172,7 @@ private:
     // Region applied to any image; used for export
     casacore::LCRegion* GetCachedLCRegion(int file_id);
     casacore::LCRegion* GetConvertedLCRegion(
-        int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape);
+        int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape, bool report_error = true);
 
     // Control points converted to pixel coords in output image, returned in LCRegion Record format for export
     casacore::TableRecord GetRegionPointsRecord(

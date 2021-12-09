@@ -19,9 +19,6 @@
 #include <utility>
 #include <vector>
 
-#include <tbb/concurrent_queue.h>
-#include <tbb/concurrent_unordered_map.h>
-#include <tbb/task.h>
 #include <uWebSockets/App.h>
 
 #include <casacore/casa/aips.h>
@@ -34,6 +31,7 @@
 #include <carta-protobuf/import_region.pb.h>
 #include <carta-protobuf/moment_request.pb.h>
 #include <carta-protobuf/open_file.pb.h>
+#include <carta-protobuf/pv_request.pb.h>
 #include <carta-protobuf/region.pb.h>
 #include <carta-protobuf/register_viewer.pb.h>
 #include <carta-protobuf/resume_session.pb.h>
@@ -42,24 +40,43 @@
 #include <carta-protobuf/set_image_channels.pb.h>
 #include <carta-protobuf/spectral_line_request.pb.h>
 #include <carta-protobuf/stop_moment_calc.pb.h>
+#include <carta-protobuf/stop_pv_calc.pb.h>
 #include <carta-protobuf/tiles.pb.h>
 
 #include <carta-scripting-grpc/carta_service.grpc.pb.h>
 
 #include "AnimationObject.h"
+#include "Concurrency.h"
 #include "FileList/FileListHandler.h"
 #include "FileSettings.h"
 #include "Frame.h"
 #include "ImageData/StokesFilesConnector.h"
 #include "Region/RegionHandler.h"
+#include "SessionContext.h"
+
 #include "Table/TableController.h"
 
 #define HISTOGRAM_CANCEL -1.0
 #define UPDATE_HISTOGRAM_PROGRESS_PER_SECONDS 2.0
+#define LOADER_CACHE_SIZE 25
 
 struct PerSocketData {
     uint32_t session_id;
     string address;
+};
+
+// Cache of loaders for reading images from disk.
+class LoaderCache {
+public:
+    LoaderCache(int capacity);
+    std::shared_ptr<carta::FileLoader> Get(std::string filename);
+    void Remove(std::string filename);
+
+private:
+    int _capacity;
+    std::unordered_map<std::string, std::shared_ptr<carta::FileLoader>> _map;
+    std::list<std::string> _queue;
+    std::mutex _loader_cache_mutex;
 };
 
 class Session {
@@ -102,6 +119,8 @@ public:
     void OnStopMomentCalc(const CARTA::StopMomentCalc& stop_moment_calc);
     void OnSaveFile(const CARTA::SaveFile& save_file, uint32_t request_id);
     bool OnConcatStokesFiles(const CARTA::ConcatStokesFiles& message, uint32_t request_id);
+    void OnPvRequest(const CARTA::PvRequest& pv_request, uint32_t request_id);
+    void OnStopPvCalc(const CARTA::StopPvCalc& stop_pv_calc);
 
     void AddToSetChannelQueue(CARTA::SetImageChannels message, uint32_t request_id) {
         std::pair<CARTA::SetImageChannels, uint32_t> rp;
@@ -121,10 +140,10 @@ public:
     void ResetHistContext() {
         _histogram_context.reset();
     }
-    tbb::task_group_context& HistContext() {
+    SessionContext& HistContext() {
         return _histogram_context;
     }
-    tbb::task_group_context& AnimationContext() {
+    SessionContext& AnimationContext() {
         return _animation_context;
     }
     void CancelAnimation() {
@@ -174,7 +193,7 @@ public:
     static int NumberOfSessions() {
         return _num_sessions;
     }
-    tbb::task_group_context& Context() {
+    SessionContext& Context() {
         return _base_context;
     }
     void SetWaitingTask(bool set_wait) {
@@ -206,7 +225,7 @@ public:
     bool SendSpectralProfileData(int file_id, int region_id, bool stokes_changed = false);
 
     FileSettings _file_settings;
-    std::unordered_map<int, tbb::concurrent_queue<std::pair<CARTA::SetImageChannels, uint32_t>>> _set_channel_queues;
+    std::unordered_map<int, carta::concurrent_queue<std::pair<CARTA::SetImageChannels, uint32_t>>> _set_channel_queues;
 
     void SendScriptingRequest(
         uint32_t scripting_request_id, std::string target, std::string action, std::string parameters, bool async, std::string return_path);
@@ -221,20 +240,26 @@ public:
 
     // Close cached image if it has been updated
     void CloseCachedImage(const std::string& directory, const std::string& file);
+    bool AnimationActive() {
+        return _animation_active;
+    }
+    void SetAnimationActive(bool val) {
+        _animation_active = val;
+    }
 
-private:
+protected:
     // File info for file list (extended info for each hdu_name)
     bool FillExtendedFileInfo(std::map<std::string, CARTA::FileInfoExtended>& hdu_info_map, CARTA::FileInfo& file_info,
         const std::string& folder, const std::string& filename, const std::string& hdu, std::string& message);
     // File info for open file
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA::FileInfo& file_info, const std::string& folder,
-        const std::string& filename, std::string& hdu_name, std::string& message);
+        const std::string& filename, std::string& hdu_name, std::string& message, std::string& fullname);
     bool FillFileInfo(
         CARTA::FileInfo& file_info, const std::string& folder, const std::string& filename, std::string& fullname, std::string& message);
 
     // File info for open moments image (not disk image)
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, std::shared_ptr<casacore::ImageInterface<float>> image,
-        const std::string& filename, std::string& message);
+        const std::string& filename, std::string& message, std::shared_ptr<carta::FileLoader>& image_loader);
 
     // Delete Frame(s)
     void DeleteFrame(int file_id);
@@ -258,6 +283,9 @@ private:
     void SendFileEvent(
         int file_id, CARTA::EventType event_type, u_int32_t event_id, google::protobuf::MessageLite& message, bool compress = true);
     void SendLogEvent(const std::string& message, std::vector<std::string> tags, CARTA::ErrorSeverity severity);
+    void StartAnimationThread() {
+        // Not sure if needed... XXX
+    }
 
     // uWebSockets
     uWS::WebSocket<false, true, PerSocketData>* _socket;
@@ -273,8 +301,8 @@ private:
     // File browser
     std::shared_ptr<FileListHandler> _file_list_handler;
 
-    // Loader for reading image from disk
-    std::unique_ptr<carta::FileLoader> _loader;
+    // Loader cache
+    LoaderCache _loaders;
 
     // Frame; key is file_id; shared with RegionHandler for data streams
     std::unordered_map<int, std::shared_ptr<Frame>> _frames;
@@ -287,6 +315,7 @@ private:
 
     // State for animation functions.
     std::unique_ptr<AnimationObject> _animation_object;
+    mutable bool _animation_active;
 
     // Individual stokes files connector
     std::unique_ptr<StokesFilesConnector> _stokes_files_connector;
@@ -299,22 +328,23 @@ private:
     float _histogram_progress;
 
     // message queue <msg, compress>
-    tbb::concurrent_queue<std::pair<std::vector<char>, bool>> _out_msgs;
+    carta::concurrent_queue<std::pair<std::vector<char>, bool>> _out_msgs;
 
-    // TBB context that enables all tasks associated with a session to be cancelled.
-    tbb::task_group_context _base_context;
+    // context that enables all tasks associated with a session to be cancelled.
+    SessionContext _base_context;
 
     // TBB context to cancel histogram calculations.
-    tbb::task_group_context _histogram_context;
+    SessionContext _histogram_context;
 
-    tbb::task_group_context _animation_context;
+    SessionContext _animation_context;
 
-    int _ref_count;
+    std::atomic<int> _ref_count;
     int _animation_id;
     bool _connected;
     static int _num_sessions;
     static int _exit_after_num_seconds;
     static bool _exit_when_all_sessions_closed;
+    static std::thread* _animation_thread;
 
     // Scripting responses from the client
     std::unordered_map<int, CARTA::ScriptingResponse> _scripting_response;
