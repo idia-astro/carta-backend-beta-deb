@@ -1,6 +1,6 @@
 carta-backend-beta (3.0+2021.12.9-1~focal1) focal; urgency=medium
 
-  * Bumped version to v3.0.0-beta.2.
+  * Bumped version to v3.0.0-beta.2b.
   * Changed
     - Removed the dependency on Intel TBB library by replacing the TBB mutexes with ones based on standard c++ ones.
     - Replaced shared image loader pointer in the session class with a cache for multiple loaders, to avoid concurrency bugs when loading multiple images simultaneously.
