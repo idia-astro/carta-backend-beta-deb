@@ -1,3 +1,24 @@
+carta-backend-beta (3.0+2021.12.9-1~focal1) focal; urgency=medium
+
+  * Bumped version to v3.0.0-beta.2.
+  * Changed
+    - Removed the dependency on Intel TBB library by replacing the TBB mutexes with ones based on standard c++ ones.
+    - Replaced shared image loader pointer in the session class with a cache for multiple loaders, to avoid concurrency bugs when loading multiple images simultaneously.
+  * Added
+    - Added ability to guess file type by extension, rather than content (#1).
+    - Added support for circular/linear polarizations when generating hypercubes (#942).
+    - Added PV image generator for line regions (#794).
+  * Fixed
+    - Fixed hard crash when attempting to read files within a read-protected directory (#945).
+    - Fixed region histograms for moment images (#906).
+    - Fixed bug of duplicate histogram calculation (#905).
+    - Fixed issues when reading stokes information from the header (#942).
+    - Fixed restoring beam set from HISTORY (#935).
+    - Fixed FITS header bug for dropped keyword index (#912).
+    - Fixed DS9 export bug by increasing precision for degrees (#953).
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Thu, 09 Dec 2021 10:45:29 +0200
+
 carta-backend-beta (3.0+2021.10.19-1~focal1) focal; urgency=medium
 
   * Special conference version with fixed spectral matching. Upstream commit 
