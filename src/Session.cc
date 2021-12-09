@@ -16,8 +16,6 @@
 #include <vector>
 
 #include <casacore/casa/OS/File.h>
-#include <tbb/parallel_for.h>
-#include <tbb/task_group.h>
 #include <zstd.h>
 
 #include <carta-protobuf/contour_image.pb.h>
@@ -29,11 +27,14 @@
 #include "FileList/FileExtInfoLoader.h"
 #include "FileList/FileInfoLoader.h"
 #include "FileList/FitsHduList.h"
+#include "ImageData/CompressedFits.h"
+#include "ImageGenerators/ImageGenerator.h"
 #include "Logger/Logger.h"
 #include "OnMessageTask.h"
 #include "SpectralLine/SpectralLineCrawler.h"
 #include "Threading.h"
 #include "Timer/Timer.h"
+#include "Util/App.h"
 #include "Util/File.h"
 #include "Util/Message.h"
 
@@ -43,9 +44,56 @@
 #include <xmmintrin.h>
 #endif
 
+LoaderCache::LoaderCache(int capacity) : _capacity(capacity){};
+
+std::shared_ptr<carta::FileLoader> LoaderCache::Get(std::string filename) {
+    std::unique_lock<std::mutex> guard(_loader_cache_mutex);
+
+    // We have a cached loader, but the file has changed
+    if (_map.find(filename) != _map.end() && _map[filename]->ImageUpdated()) {
+        _map.erase(filename);
+        _queue.remove(filename);
+    }
+
+    // We don't have a cached loader
+    if (_map.find(filename) == _map.end()) {
+        // Create the loader -- don't block while doing this
+        std::shared_ptr<carta::FileLoader> loader_ptr;
+        guard.unlock();
+        loader_ptr = std::shared_ptr<carta::FileLoader>(carta::FileLoader::GetLoader(filename));
+        guard.lock();
+
+        // Check if the loader was added in the meantime
+        if (_map.find(filename) == _map.end()) {
+            // Evict oldest loader if necessary
+            if (_map.size() == _capacity) {
+                _map.erase(_queue.back());
+                _queue.pop_back();
+            }
+
+            // Insert the new loader
+            _map[filename] = loader_ptr;
+            _queue.push_front(filename);
+        }
+    } else {
+        // Touch the cache entry
+        _queue.remove(filename);
+        _queue.push_front(filename);
+    }
+
+    return _map[filename];
+}
+
+void LoaderCache::Remove(std::string filename) {
+    std::unique_lock<std::mutex> guard(_loader_cache_mutex);
+    _map.erase(filename);
+    _queue.remove(filename);
+}
+
 int Session::_num_sessions = 0;
 int Session::_exit_after_num_seconds = 5;
 bool Session::_exit_when_all_sessions_closed = false;
+std::thread* Session::_animation_thread = nullptr;
 
 Session::Session(uWS::WebSocket<false, true, PerSocketData>* ws, uWS::Loop* loop, uint32_t id, std::string address,
     std::string top_level_folder, std::string starting_folder, std::shared_ptr<FileListHandler> file_list_handler, int grpc_port,
@@ -59,11 +107,11 @@ Session::Session(uWS::WebSocket<false, true, PerSocketData>* ws, uWS::Loop* loop
       _table_controller(std::make_unique<carta::TableController>(_top_level_folder, _starting_folder)),
       _grpc_port(grpc_port),
       _read_only_mode(read_only_mode),
-      _loader(nullptr),
       _region_handler(nullptr),
       _file_list_handler(file_list_handler),
       _animation_id(0),
-      _file_settings(this) {
+      _file_settings(this),
+      _loaders(LOADER_CACHE_SIZE) {
     _histogram_progress = 1.0;
     _ref_count = 0;
     _animation_object = nullptr;
@@ -167,8 +215,12 @@ bool Session::FillExtendedFileInfo(std::map<std::string, CARTA::FileInfoExtended
         }
 
         // FileInfoExtended
-        _loader.reset(carta::FileLoader::GetLoader(fullname));
-        FileExtInfoLoader ext_info_loader(_loader.get());
+        auto loader = _loaders.Get(fullname);
+        if (!loader) {
+            message = "Unsupported format.";
+            return file_info_ok;
+        }
+        FileExtInfoLoader ext_info_loader(loader);
 
         std::string requested_hdu(hdu);
         if (requested_hdu.empty() && (file_info.hdu_list_size() > 0)) {
@@ -195,16 +247,23 @@ bool Session::FillExtendedFileInfo(std::map<std::string, CARTA::FileInfoExtended
 }
 
 bool Session::FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA::FileInfo& file_info, const std::string& folder,
-    const std::string& filename, std::string& hdu, std::string& message) {
+    const std::string& filename, std::string& hdu, std::string& message, std::string& fullname) {
     // Fill FileInfoExtended for given file and hdu_name (may include extension name)
     bool file_info_ok(false);
 
     try {
         // FileInfo
-        std::string fullname;
         if (!FillFileInfo(file_info, folder, filename, fullname, message)) {
             return file_info_ok;
         }
+
+        // Get file extended info loader
+        auto loader = _loaders.Get(fullname);
+        if (!loader) {
+            message = "Unsupported format.";
+            return file_info_ok;
+        }
+        FileExtInfoLoader ext_info_loader = FileExtInfoLoader(loader);
 
         // Discern hdu for extended file info
         if (hdu.empty()) {
@@ -214,21 +273,27 @@ bool Session::FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA
 
             if (hdu.empty() && (file_info.type() == CARTA::FileType::FITS)) {
                 // File info adds empty string for FITS
-                std::vector<std::string> hdu_list;
-                std::string message;
-                FitsHduList fits_hdu_list(fullname);
-                fits_hdu_list.GetHduList(hdu_list, message);
+                if (IsCompressedFits(fullname)) {
+                    CompressedFits cfits(fullname);
+                    if (!cfits.GetFirstImageHdu(hdu)) {
+                        message = "No image HDU found for FITS.";
+                        return file_info_ok;
+                    }
+                } else {
+                    std::vector<std::string> hdu_list;
+                    FitsHduList fits_hdu_list(fullname);
+                    fits_hdu_list.GetHduList(hdu_list, message);
 
-                if (hdu_list.empty()) {
-                    return file_info_ok;
+                    if (hdu_list.empty()) {
+                        message = "No image HDU found for FITS.";
+                        return file_info_ok;
+                    }
+
+                    hdu = hdu_list[0].substr(0, hdu_list[0].find(":"));
                 }
-
-                hdu = hdu_list[0].substr(0, hdu_list[0].find(":"));
             }
         }
 
-        _loader.reset(carta::FileLoader::GetLoader(fullname));
-        FileExtInfoLoader ext_info_loader = FileExtInfoLoader(_loader.get());
         file_info_ok = ext_info_loader.FillFileExtInfo(extended_info, fullname, hdu, message);
     } catch (casacore::AipsError& err) {
         message = err.getMesg();
@@ -238,13 +303,13 @@ bool Session::FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA
 }
 
 bool Session::FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, std::shared_ptr<casacore::ImageInterface<float>> image,
-    const std::string& filename, std::string& message) {
+    const std::string& filename, std::string& message, std::shared_ptr<carta::FileLoader>& image_loader) {
     // Fill FileInfoExtended for given image; no hdu
     bool file_info_ok(false);
 
     try {
-        _loader.reset(carta::FileLoader::GetLoader(image));
-        FileExtInfoLoader ext_info_loader = FileExtInfoLoader(_loader.get());
+        image_loader = std::shared_ptr<carta::FileLoader>(carta::FileLoader::GetLoader(image));
+        FileExtInfoLoader ext_info_loader(image_loader);
         file_info_ok = ext_info_loader.FillFileExtInfo(extended_info, filename, "", message);
     } catch (casacore::AipsError& err) {
         message = err.getMesg();
@@ -306,6 +371,14 @@ void Session::OnRegisterViewer(const CARTA::RegisterViewer& message, uint16_t ic
     ack_message.set_success(success);
     ack_message.set_message(status);
     ack_message.set_session_type(type);
+
+    auto& platform_string_map = *ack_message.mutable_platform_strings();
+    platform_string_map["release_info"] = GetReleaseInformation();
+#if __APPLE__
+    platform_string_map["platform"] = "macOS";
+#else
+    platform_string_map["platform"] = "Linux";
+#endif
 
     uint32_t feature_flags;
     if (_read_only_mode) {
@@ -391,20 +464,26 @@ bool Session::OnOpenFile(const CARTA::OpenFile& message, uint32_t request_id, bo
     CARTA::OpenFileAck ack;
     ack.set_file_id(file_id);
     string err_message;
+    std::string fullname;
     bool success(false);
 
     // Set _loader and get file info
     CARTA::FileInfo file_info;
     CARTA::FileInfoExtended file_info_extended;
-    bool info_loaded = FillExtendedFileInfo(file_info_extended, file_info, directory, filename, hdu, err_message);
+    bool info_loaded = FillExtendedFileInfo(file_info_extended, file_info, directory, filename, hdu, err_message, fullname);
 
     if (info_loaded) {
-        // create Frame for image; Frame owns loader
-        auto frame = std::shared_ptr<Frame>(new Frame(_id, _loader.get(), hdu));
+        // Get or create loader for frame
+        auto loader = _loaders.Get(fullname);
+
+        // create Frame for image
+        auto frame = std::shared_ptr<Frame>(new Frame(_id, loader, hdu));
 
         // query loader for mipmap dataset
-        bool has_mipmaps(_loader->HasMip(2));
-        _loader.release();
+        bool has_mipmaps(loader->HasMip(2));
+
+        // remove loader from the cache (if we open another copy of this file, we will need a new loader object)
+        _loaders.Remove(fullname);
 
         if (frame->IsValid()) {
             // Check if the old _frames[file_id] object exists. If so, delete it.
@@ -458,6 +537,8 @@ bool Session::OnOpenFile(const CARTA::OpenFile& message, uint32_t request_id, bo
             std::string message = fmt::format("Image histogram for file id {} failed", file_id);
             SendLogEvent(message, {"open_file"}, CARTA::ErrorSeverity::ERROR);
         }
+    } else if (!err_message.empty()) {
+        spdlog::error(err_message);
     }
     return success;
 }
@@ -467,15 +548,15 @@ bool Session::OnOpenFile(
     // Response message for opening a file
     open_file_ack->set_file_id(file_id);
     string err_message;
+    std::shared_ptr<carta::FileLoader> image_loader;
 
     CARTA::FileInfoExtended file_info_extended;
-    bool info_loaded = FillExtendedFileInfo(file_info_extended, image, name, err_message);
+    bool info_loaded = FillExtendedFileInfo(file_info_extended, image, name, err_message, image_loader);
     bool success(false);
 
     if (info_loaded) {
         // Create Frame for image
-        auto frame = std::make_unique<Frame>(_id, _loader.get(), "");
-        _loader.release();
+        auto frame = std::make_unique<Frame>(_id, image_loader, "");
 
         if (frame->IsValid()) {
             if (_frames.count(file_id) > 0) {
@@ -508,6 +589,8 @@ bool Session::OnOpenFile(
 
     if (success) {
         UpdateRegionData(file_id, IMAGE_REGION_ID, false, false);
+    } else if (!err_message.empty()) {
+        spdlog::error(err_message);
     }
     return success;
 }
@@ -709,8 +792,8 @@ bool Session::OnSetRegion(const CARTA::SetRegion& message, uint32_t request_id, 
 
     // update data streams if requirements set and region changed
     if (success && _region_handler->RegionChanged(region_id)) {
-        OnMessageTask* tsk = new (tbb::task::allocate_root(this->Context())) RegionDataStreamsTask(this, ALL_FILES, region_id);
-        tbb::task::enqueue(*tsk);
+        OnMessageTask* tsk = new RegionDataStreamsTask(this, ALL_FILES, region_id);
+        ThreadManager::QueueTask(tsk);
     }
 
     return success;
@@ -917,8 +1000,8 @@ void Session::OnSetSpectralRequirements(const CARTA::SetSpectralRequirements& me
 
         if (requirements_set) {
             // RESPONSE
-            OnMessageTask* tsk = new (tbb::task::allocate_root(this->Context())) SpectralProfileTask(this, file_id, region_id);
-            tbb::task::enqueue(*tsk);
+            OnMessageTask* tsk = new SpectralProfileTask(this, file_id, region_id);
+            ThreadManager::QueueTask(tsk);
         } else if (region_id != IMAGE_REGION_ID) { // not sure why frontend sends this
             string error = fmt::format("Spectral requirements not valid for region id {}", region_id);
             SendLogEvent(error, {"spectral"}, CARTA::ErrorSeverity::ERROR);
@@ -1139,7 +1222,7 @@ void Session::OnMomentRequest(const CARTA::MomentRequest& moment_request, uint32
         };
 
         // Do calculations
-        std::vector<carta::CollapseResult> collapse_results;
+        std::vector<carta::GeneratedImage> collapse_results;
         CARTA::MomentResponse moment_response;
         if (region_id > 0) {
             _region_handler->CalculateMoments(
@@ -1179,9 +1262,11 @@ void Session::OnStopMomentCalc(const CARTA::StopMomentCalc& stop_moment_calc) {
 void Session::OnSaveFile(const CARTA::SaveFile& save_file, uint32_t request_id) {
     int file_id(save_file.file_id());
     int region_id(save_file.region_id());
+
     if (_frames.count(file_id)) {
         CARTA::SaveFileAck save_file_ack;
         auto active_frame = _frames.at(file_id);
+
         if (_read_only_mode) {
             string error = "Saving files is not allowed in read-only mode";
             spdlog::error(error);
@@ -1190,11 +1275,13 @@ void Session::OnSaveFile(const CARTA::SaveFile& save_file, uint32_t request_id) 
             save_file_ack.set_message(error);
         } else if (region_id) {
             std::shared_ptr<Region> _region = _region_handler->GetRegion(region_id);
-            if (active_frame->GetImageRegion(file_id, _region)) {
-                active_frame->SaveFile(_top_level_folder, save_file, save_file_ack, _region);
-            } else {
-                save_file_ack.set_success(false);
-                save_file_ack.set_message("The selected region is entirely outside the image.");
+            if (_region) {
+                if (active_frame->GetImageRegion(file_id, _region)) {
+                    active_frame->SaveFile(_top_level_folder, save_file, save_file_ack, _region);
+                } else {
+                    save_file_ack.set_success(false);
+                    save_file_ack.set_message("The selected region is entirely outside the image.");
+                }
             }
         } else {
             // Save full image
@@ -1248,6 +1335,54 @@ bool Session::OnConcatStokesFiles(const CARTA::ConcatStokesFiles& message, uint3
 
     SendEvent(CARTA::EventType::CONCAT_STOKES_FILES_ACK, request_id, response);
     return success;
+}
+
+void Session::OnPvRequest(const CARTA::PvRequest& pv_request, uint32_t request_id) {
+    int file_id(pv_request.file_id());
+    int region_id(pv_request.region_id());
+    int width(pv_request.width());
+    CARTA::PvResponse pv_response;
+
+    if (_frames.count(file_id)) {
+        if (!_region_handler || (region_id <= CURSOR_REGION_ID)) {
+            pv_response.set_success(false);
+            pv_response.set_message("Invalid region id.");
+        } else {
+            auto t_start_pv_image = std::chrono::high_resolution_clock::now();
+
+            // Set pv progress callback function
+            auto progress_callback = [&](float progress) {
+                CARTA::PvProgress pv_progress;
+                pv_progress.set_file_id(file_id);
+                pv_progress.set_progress(progress);
+                SendEvent(CARTA::EventType::PV_PROGRESS, request_id, pv_progress);
+            };
+
+            auto& frame = _frames.at(file_id);
+            carta::GeneratedImage pv_image;
+
+            if (_region_handler->CalculatePvImage(file_id, region_id, width, frame, progress_callback, pv_response, pv_image)) {
+                auto* open_file_ack = pv_response.mutable_open_file_ack();
+                OnOpenFile(pv_image.file_id, pv_image.name, pv_image.image, open_file_ack);
+            }
+
+            auto t_end_pv_image = std::chrono::high_resolution_clock::now();
+            auto dt_pv_image = std::chrono::duration_cast<std::chrono::microseconds>(t_end_pv_image - t_start_pv_image).count();
+            spdlog::performance("Generate pv image in {:.3f} ms", dt_pv_image * 1e-3);
+        }
+
+        SendEvent(CARTA::EventType::PV_RESPONSE, request_id, pv_response);
+    } else {
+        string error = fmt::format("File id {} not found", file_id);
+        SendLogEvent(error, {"PV"}, CARTA::ErrorSeverity::DEBUG);
+    }
+}
+
+void Session::OnStopPvCalc(const CARTA::StopPvCalc& stop_pv_calc) {
+    int file_id(stop_pv_calc.file_id());
+    if (_region_handler) {
+        _region_handler->StopPvCalc(file_id);
+    }
 }
 
 // ******** SEND DATA STREAMS *********
@@ -1709,20 +1844,22 @@ void Session::SendEvent(CARTA::EventType event_type, uint32_t event_id, const go
 
     // uWS::Loop::defer(function) is the only thread-safe function, use it to defer the calling of a function to the thread that runs the
     // Loop.
-    _loop->defer([&]() {
-        std::pair<std::vector<char>, bool> msg;
-        if (_connected) {
-            while (_out_msgs.try_pop(msg)) {
-                std::string_view sv(msg.first.data(), msg.first.size());
-                _socket->cork([&]() {
-                    auto status = _socket->send(sv, uWS::OpCode::BINARY, msg.second);
-                    if (status == uWS::WebSocket<false, true, PerSocketData>::DROPPED) {
-                        spdlog::error("Failed to send message of size {} kB", sv.size() / 1024.0);
-                    }
-                });
+    if (_loop && _socket) {
+        _loop->defer([&]() {
+            std::pair<std::vector<char>, bool> msg;
+            if (_connected) {
+                while (_out_msgs.try_pop(msg)) {
+                    std::string_view sv(msg.first.data(), msg.first.size());
+                    _socket->cork([&]() {
+                        auto status = _socket->send(sv, uWS::OpCode::BINARY, msg.second);
+                        if (status == uWS::WebSocket<false, true, PerSocketData>::DROPPED) {
+                            spdlog::error("Failed to send message of size {} kB", sv.size() / 1024.0);
+                        }
+                    });
+                }
             }
-        }
-    });
+        });
+    }
 }
 
 void Session::SendFileEvent(
@@ -1793,7 +1930,7 @@ void Session::ExecuteAnimationFrameInner() {
             auto active_frame_z = curr_frame.channel();
             auto active_frame_stokes = curr_frame.stokes();
 
-            if ((_animation_object->_tbb_context).is_group_execution_cancelled()) {
+            if ((_animation_object->_context).is_group_execution_cancelled()) {
                 return;
             }
 
@@ -2014,8 +2151,8 @@ void Session::HandleAnimationFlowControlEvt(CARTA::AnimationFlowControl& message
     if (_animation_object->_waiting_flow_event) {
         if (gap <= CurrentFlowWindowSize()) {
             _animation_object->_waiting_flow_event = false;
-            OnMessageTask* tsk = new (tbb::task::allocate_root(_animation_context)) AnimationTask(this);
-            tbb::task::enqueue(*tsk);
+            OnMessageTask* tsk = new AnimationTask(this);
+            ThreadManager::QueueTask(tsk);
         }
     }
 }

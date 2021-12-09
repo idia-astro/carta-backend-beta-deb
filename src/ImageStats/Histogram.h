@@ -7,10 +7,8 @@
 #ifndef CARTA_BACKEND_IMAGESTATS_HISTOGRAM_H_
 #define CARTA_BACKEND_IMAGESTATS_HISTOGRAM_H_
 
+#include <cstddef>
 #include <vector>
-
-#include <tbb/blocked_range2d.h>
-#include <tbb/blocked_range3d.h>
 
 namespace carta {
 

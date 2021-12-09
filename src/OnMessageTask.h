@@ -14,33 +14,31 @@
 #include <vector>
 
 #include <carta-protobuf/contour.pb.h>
-#include <tbb/concurrent_queue.h>
-#include <tbb/task.h>
 
 #include "AnimationObject.h"
 #include "Session.h"
 #include "Util/Message.h"
 
-class OnMessageTask : public tbb::task {
+class OnMessageTask {
 protected:
     Session* _session;
-    tbb::task* execute() override = 0;
 
 public:
     OnMessageTask(Session* session) : _session(session) {
         _session->IncreaseRefCount();
     }
-    ~OnMessageTask() {
+    virtual ~OnMessageTask() {
         if (!_session->DecreaseRefCount()) {
             delete _session;
         }
         _session = nullptr;
     }
+    virtual OnMessageTask* execute() = 0;
 };
 
 class SetImageChannelsTask : public OnMessageTask {
     int _file_id;
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
 
 public:
     SetImageChannelsTask(Session* session, int file_id) : OnMessageTask(session), _file_id(file_id) {}
@@ -49,7 +47,7 @@ public:
 
 class SetCursorTask : public OnMessageTask {
     int _file_id;
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
 
 public:
     SetCursorTask(Session* session, int file_id) : OnMessageTask(session), _file_id(file_id) {}
@@ -57,7 +55,7 @@ public:
 };
 
 class AnimationTask : public OnMessageTask {
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
 
 public:
     AnimationTask(Session* session) : OnMessageTask(session) {}
@@ -65,7 +63,7 @@ public:
 };
 
 class RegionDataStreamsTask : public OnMessageTask {
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
     int _file_id, _region_id;
 
 public:
@@ -75,7 +73,7 @@ public:
 };
 
 class SpectralProfileTask : public OnMessageTask {
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
     int _file_id, _region_id;
 
 public:
@@ -84,7 +82,7 @@ public:
 };
 
 class OnSplataloguePingTask : public OnMessageTask {
-    tbb::task* execute() override;
+    OnMessageTask* execute() override;
     uint32_t _request_id;
 
 public:
