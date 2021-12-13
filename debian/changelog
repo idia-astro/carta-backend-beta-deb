@@ -1,3 +1,9 @@
+carta-backend-beta (3.0+2021.12.13-1~bionic1) bionic; urgency=medium
+
+  * Bumped version to v3.0.0-beta.2c to fix hanging bug triggered if exiting after session timeout.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Mon, 13 Dec 2021 08:30:20 +0200
+
 carta-backend-beta (3.0+2021.12.9-1~bionic1) bionic; urgency=medium
 
   * Bumped version to v3.0.0-beta.2b.
