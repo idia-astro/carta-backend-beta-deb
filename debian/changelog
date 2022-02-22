@@ -1,3 +1,9 @@
+carta-backend-beta (3.0+2022.2.22-1~focal1) focal; urgency=medium
+
+  * Bumped version to latest dev (after the merge of the migration of the scripting interface from gRPC to HTTP).
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 22 Feb 2022 11:07:21 +0200
+
 carta-backend-beta (3.0+2021.12.13-1~focal1) focal; urgency=medium
 
   * Bumped version to v3.0.0-beta.2c to fix hanging bug triggered if exiting after session timeout.
