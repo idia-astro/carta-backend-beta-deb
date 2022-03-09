@@ -1,3 +1,9 @@
+carta-backend-beta (3.0+2022.2.22-1~bionic2) bionic; urgency=medium
+
+  * Rebuild with new carta-casacore.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Wed, 09 Mar 2022 14:56:30 +0200
+
 carta-backend-beta (3.0+2022.2.22-1~bionic1) bionic; urgency=medium
 
   * Bumped version to latest dev (after the merge of the migration of the scripting interface from gRPC to HTTP).
