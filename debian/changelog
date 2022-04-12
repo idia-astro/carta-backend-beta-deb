@@ -1,3 +1,9 @@
+carta-backend-beta (3.0+2022.2.22-1~bionic3) bionic; urgency=medium
+
+  * Rebuild with new carta-casacore.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 12 Apr 2022 14:06:45 +0200
+
 carta-backend-beta (3.0+2022.2.22-1~bionic2) bionic; urgency=medium
 
   * Rebuild with new carta-casacore.
