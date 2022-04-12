@@ -1,3 +1,9 @@
+carta-backend-beta (3.0+2022.2.22-1~focal3) focal; urgency=medium
+
+  * Rebuild with new carta-casacore.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 12 Apr 2022 14:06:45 +0200
+
 carta-backend-beta (3.0+2022.2.22-1~focal2) focal; urgency=medium
 
   * Rebuild with new carta-casacore.
