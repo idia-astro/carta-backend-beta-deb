@@ -20,8 +20,8 @@
 
 using namespace carta;
 
-Ds9ImportExport::Ds9ImportExport(casacore::CoordinateSystem* image_coord_sys, const casacore::IPosition& image_shape, int file_id,
-    const std::string& file, bool file_is_filename)
+Ds9ImportExport::Ds9ImportExport(std::shared_ptr<casacore::CoordinateSystem> image_coord_sys, const casacore::IPosition& image_shape,
+    int file_id, const std::string& file, bool file_is_filename)
     : RegionImportExport(image_coord_sys, image_shape, file_id), _file_ref_frame("physical"), _pixel_coord(true) {
     // Import regions in DS9 format
     SetParserDelim(" ,()#");
@@ -29,7 +29,8 @@ Ds9ImportExport::Ds9ImportExport(casacore::CoordinateSystem* image_coord_sys, co
     ProcessFileLines(lines);
 }
 
-Ds9ImportExport::Ds9ImportExport(casacore::CoordinateSystem* image_coord_sys, const casacore::IPosition& image_shape, bool pixel_coord)
+Ds9ImportExport::Ds9ImportExport(
+    std::shared_ptr<casacore::CoordinateSystem> image_coord_sys, const casacore::IPosition& image_shape, bool pixel_coord)
     : RegionImportExport(image_coord_sys, image_shape), _pixel_coord(pixel_coord) {
     // Export regions to DS9 format
     // Set coordinate system for file header
@@ -55,10 +56,6 @@ Ds9ImportExport::Ds9ImportExport(casacore::CoordinateSystem* image_coord_sys, co
     }
 
     AddHeader();
-}
-
-Ds9ImportExport::~Ds9ImportExport() {
-    delete _coord_sys;
 }
 
 void Ds9ImportExport::InitGlobalProperties() {
@@ -476,7 +473,6 @@ RegionState Ds9ImportExport::ImportEllipseRegion(std::vector<std::string>& param
         bool is_circle = (parameters[3] == parameters[4]);
         // convert strings to Quantities
         std::vector<casacore::Quantity> param_quantities;
-        std::vector<casacore::String> units = {"", "deg", "deg", "arcsec", "arcsec", "deg"};
         for (size_t i = 1; i < nparam; ++i) {
             std::string param(parameters[i]);
             // Convert DS9 unit to Quantity unit for readQuantity
@@ -487,10 +483,10 @@ RegionState Ds9ImportExport::ImportEllipseRegion(std::vector<std::string>& param
                 casacore::Quantity param_quantity;
                 if (readQuantity(param_quantity, param)) {
                     if (param_quantity.getUnit().empty()) {
-                        if ((i == nparam - 1) || !_pixel_coord) {
-                            param_quantity.setUnit(units[i]);
-                        } else {
+                        if (_pixel_coord) {
                             param_quantity.setUnit("pixel");
+                        } else {
+                            param_quantity.setUnit("deg");
                         }
                     }
                     param_quantities.push_back(param_quantity);
@@ -569,7 +565,6 @@ RegionState Ds9ImportExport::ImportRectangleRegion(std::vector<std::string>& par
         // convert strings to Quantities
         std::vector<casacore::Quantity> param_quantities;
         // DS9 wcs default units
-        std::vector<casacore::String> ds9_units = {"", "deg", "deg", "arcsec", "arcsec", "deg"};
         for (size_t i = 1; i < nparam; ++i) {
             std::string param(parameters[i]);
             // Convert DS9 unit to Quantity unit for readQuantity
@@ -580,10 +575,10 @@ RegionState Ds9ImportExport::ImportRectangleRegion(std::vector<std::string>& par
                 casacore::Quantity param_quantity;
                 if (readQuantity(param_quantity, param)) {
                     if (param_quantity.getUnit().empty()) {
-                        if ((i == nparam - 1) || !_pixel_coord) {
-                            param_quantity.setUnit(ds9_units[i]);
-                        } else {
+                        if (_pixel_coord) {
                             param_quantity.setUnit("pixel");
+                        } else {
+                            param_quantity.setUnit("deg");
                         }
                     }
                     param_quantities.push_back(param_quantity);

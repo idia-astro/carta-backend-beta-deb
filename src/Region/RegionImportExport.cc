@@ -16,12 +16,13 @@
 
 using namespace carta;
 
-RegionImportExport::RegionImportExport(casacore::CoordinateSystem* image_coord_sys, const casacore::IPosition& image_shape, int file_id)
+RegionImportExport::RegionImportExport(
+    std::shared_ptr<casacore::CoordinateSystem> image_coord_sys, const casacore::IPosition& image_shape, int file_id)
     : _coord_sys(image_coord_sys), _image_shape(image_shape), _file_id(file_id) {
     // Constructor for import. Use GetImportedRegions to retrieve regions.
 }
 
-RegionImportExport::RegionImportExport(casacore::CoordinateSystem* image_coord_sys, const casacore::IPosition& image_shape)
+RegionImportExport::RegionImportExport(std::shared_ptr<casacore::CoordinateSystem> image_coord_sys, const casacore::IPosition& image_shape)
     : _coord_sys(image_coord_sys), _image_shape(image_shape) {
     // Constructor for export. Use AddExportRegion to add regions, then ExportRegions to finalize
 }
@@ -90,7 +91,7 @@ std::vector<std::string> RegionImportExport::ReadRegionFile(const std::string& f
             std::string single_line;
             getline(region_file, single_line);
 
-            if (single_line.back() == '\r') {
+            if (!single_line.empty() && (single_line.back() == '\r')) {
                 // Remove carriage return from DOS file
                 single_line.pop_back();
             }

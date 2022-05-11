@@ -30,6 +30,12 @@ public:
     CartaHdf5Image(const CartaHdf5Image& other);
     ~CartaHdf5Image() override;
 
+    // Function to open a CARTA HDF5 image
+    static casacore::LatticeBase* OpenCartaHdf5Image(const casacore::String& name, const casacore::MaskSpecifier& spec);
+
+    // Register the open function in casacore::ImageOpener
+    static void RegisterOpenFunction();
+
     inline const casacore::CountedPtr<casacore::HDF5Group> Group() const {
         return _lattice.group();
     };
@@ -58,6 +64,8 @@ public:
     casacore::Bool doGetMaskSlice(casacore::Array<bool>& buffer, const casacore::Slicer& section) override;
 
     casacore::Vector<casacore::String> FitsHeaderStrings();
+
+    casacore::DataType internalDataType();
 
 private:
     // Function to return the internal HDF5File object to the RegionHandlerHDF5

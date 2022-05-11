@@ -28,6 +28,7 @@
 #include <carta-protobuf/export_region.pb.h>
 #include <carta-protobuf/file_info.pb.h>
 #include <carta-protobuf/file_list.pb.h>
+#include <carta-protobuf/fitting_request.pb.h>
 #include <carta-protobuf/import_region.pb.h>
 #include <carta-protobuf/moment_request.pb.h>
 #include <carta-protobuf/open_file.pb.h>
@@ -72,8 +73,8 @@ struct PerSocketData {
 class LoaderCache {
 public:
     LoaderCache(int capacity);
-    std::shared_ptr<FileLoader> Get(std::string filename);
-    void Remove(std::string filename);
+    std::shared_ptr<FileLoader> Get(const std::string& filename, const std::string& directory = "");
+    void Remove(const std::string& filename);
 
 private:
     int _capacity;
@@ -125,6 +126,8 @@ public:
     bool OnConcatStokesFiles(const CARTA::ConcatStokesFiles& message, uint32_t request_id);
     void OnPvRequest(const CARTA::PvRequest& pv_request, uint32_t request_id);
     void OnStopPvCalc(const CARTA::StopPvCalc& stop_pv_calc);
+    void OnFittingRequest(const CARTA::FittingRequest& fitting_request, uint32_t request_id);
+    void OnSetVectorOverlayParameters(const CARTA::SetVectorOverlayParameters& message);
 
     void AddToSetChannelQueue(CARTA::SetImageChannels message, uint32_t request_id) {
         std::pair<CARTA::SetImageChannels, uint32_t> rp;
@@ -262,7 +265,7 @@ protected:
     bool FillFileInfo(
         CARTA::FileInfo& file_info, const std::string& folder, const std::string& filename, std::string& fullname, std::string& message);
 
-    // File info for open moments image (not disk image)
+    // File info for open generated image (not disk image)
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, std::shared_ptr<casacore::ImageInterface<float>> image,
         const std::string& filename, std::string& message, std::shared_ptr<FileLoader>& image_loader);
 
@@ -282,15 +285,13 @@ protected:
     bool SendRegionStatsData(int file_id, int region_id);
     void UpdateImageData(int file_id, bool send_image_histogram, bool z_changed, bool stokes_changed);
     void UpdateRegionData(int file_id, int region_id, bool z_changed, bool stokes_changed);
+    bool SendVectorFieldData(int file_id);
 
     // Send protobuf messages
     void SendEvent(CARTA::EventType event_type, u_int32_t event_id, const google::protobuf::MessageLite& message, bool compress = true);
     void SendFileEvent(
         int file_id, CARTA::EventType event_type, u_int32_t event_id, google::protobuf::MessageLite& message, bool compress = true);
     void SendLogEvent(const std::string& message, std::vector<std::string> tags, CARTA::ErrorSeverity severity);
-    void StartAnimationThread() {
-        // Not sure if needed... XXX
-    }
 
     // uWebSockets
     uWS::WebSocket<false, true, PerSocketData>* _socket;
@@ -346,7 +347,7 @@ protected:
     std::atomic<int> _ref_count;
     int _animation_id;
     bool _connected;
-    static int _num_sessions;
+    static volatile int _num_sessions;
     static int _exit_after_num_seconds;
     static bool _exit_when_all_sessions_closed;
     static std::thread* _animation_thread;

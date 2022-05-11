@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include <casacore/casa/Utilities/DataType.h>
 #include <casacore/images/Images/ImageInterface.h>
 #include <casacore/images/Images/SubImage.h>
 
@@ -17,20 +18,39 @@
 #include <carta-protobuf/enums.pb.h>
 
 #include "ImageData/FileInfo.h"
+#include "Util/Casacore.h"
+#include "Util/Image.h"
 
 namespace carta {
 
 class Frame;
 
+struct StokesSlicer {
+    StokesSource stokes_source;
+    casacore::Slicer slicer;
+
+    StokesSlicer() {}
+    StokesSlicer(StokesSource stokes_source_, casacore::Slicer slicer_) : stokes_source(stokes_source_), slicer(slicer_) {}
+};
+
+struct StokesRegion {
+    StokesSource stokes_source;
+    casacore::ImageRegion image_region;
+
+    StokesRegion() {}
+    StokesRegion(StokesSource stokes_source_, casacore::ImageRegion image_region_)
+        : stokes_source(stokes_source_), image_region(image_region_) {}
+};
+
 class FileLoader {
 public:
     using ImageRef = std::shared_ptr<casacore::ImageInterface<float>>;
-    using IPos = casacore::IPosition;
 
-    FileLoader(const std::string& filename, bool is_gz = false);
+    // directory only for ExprLoader, is_gz only for FitsLoader
+    FileLoader(const std::string& filename, const std::string& directory = "", bool is_gz = false);
     virtual ~FileLoader() = default;
 
-    static FileLoader* GetLoader(const std::string& filename);
+    static FileLoader* GetLoader(const std::string& filename, const std::string& directory = "");
     // Access an image from the memory, not from the disk
     static FileLoader* GetLoader(std::shared_ptr<casacore::ImageInterface<float>> image);
 
@@ -45,23 +65,28 @@ public:
     void CloseImageIfUpdated();
 
     // Return the opened casacore image or its class name
-    ImageRef GetImage();
+    ImageRef GetImage(bool check_data_type = true);
+    casacore::DataType GetDataType();
+    bool IsComplexDataType();
+
+    // Return the opened casacore image or computed stokes image
+    ImageRef GetStokesImage(const StokesSource& stokes_source);
 
     // read beam subtable
     bool GetBeams(std::vector<CARTA::Beam>& beams, std::string& error);
 
     // Image shape and coordinate system axes
-    bool GetShape(IPos& shape);
-    bool GetCoordinateSystem(casacore::CoordinateSystem& coord_sys);
-    bool FindCoordinateAxes(IPos& shape, int& spectral_axis, int& z_axis, int& stokes_axis, std::string& message);
+    casacore::IPosition GetShape();
+    std::shared_ptr<casacore::CoordinateSystem> GetCoordinateSystem(const StokesSource& stokes_source = StokesSource());
+    bool FindCoordinateAxes(casacore::IPosition& shape, int& spectral_axis, int& z_axis, int& stokes_axis, std::string& message);
     std::vector<int> GetRenderAxes(); // Determine axes used for image raster data
 
     // Slice image data (with mask applied)
-    bool GetSlice(casacore::Array<float>& data, const casacore::Slicer& slicer);
+    bool GetSlice(casacore::Array<float>& data, const StokesSlicer& stokes_slicer);
 
     // SubImage
-    bool GetSubImage(const casacore::Slicer& slicer, casacore::SubImage<float>& sub_image);
-    bool GetSubImage(const casacore::LattRegionHolder& region, casacore::SubImage<float>& sub_image);
+    bool GetSubImage(const StokesSlicer& stokes_slicer, casacore::SubImage<float>& sub_image);
+    bool GetSubImage(const StokesRegion& stokes_region, casacore::SubImage<float>& sub_image);
     bool GetSubImage(const casacore::Slicer& slicer, const casacore::LattRegionHolder& region, casacore::SubImage<float>& sub_image);
 
     // Image Statistics
@@ -94,33 +119,43 @@ public:
     virtual void SetStokesCrpix(float stokes_crpix);
     virtual void SetStokesCdelt(int stokes_cdelt);
     virtual bool GetStokesTypeIndex(const CARTA::PolarizationType& stokes_type, int& stokes_index);
+    std::unordered_map<CARTA::PolarizationType, int> GetStokesIndices() {
+        return _stokes_indices;
+    };
 
     // Modify time changed
     bool ImageUpdated();
 
+    // Handle images created from LEL expression
+    virtual bool SaveFile(const CARTA::FileType type, const std::string& output_filename, std::string& message);
+
 protected:
-    // Full name and hdu of the image file
-    std::string _filename;
+    // Full name and characteristics of the image file
+    std::string _filename, _directory;
     std::string _hdu;
     bool _is_gz;
     unsigned int _modify_time;
+
     std::shared_ptr<casacore::ImageInterface<casacore::Float>> _image;
 
-    // Save image properties; only reopen for data or beams
-    // Axes, dimension values
+    // Computed stokes image
+    std::shared_ptr<casacore::ImageInterface<float>> _computed_stokes_image;
+    StokesSource _stokes_source;
+
+    // Save image properties
     casacore::IPosition _image_shape;
     size_t _num_dims, _image_plane_size;
     size_t _width, _height, _depth, _num_stokes;
     int _z_axis, _stokes_axis;
     std::vector<int> _render_axes;
-    // Coordinate system
-    casacore::CoordinateSystem _coord_sys;
-    // Pixel mask
+    std::shared_ptr<casacore::CoordinateSystem> _coord_sys;
     bool _has_pixel_mask;
+    casacore::DataType _data_type;
 
     // Storage for z-plane and cube statistics
     std::vector<std::vector<FileInfo::ImageStats>> _z_stats;
     std::vector<FileInfo::ImageStats> _cube_stats;
+    FileInfo::ImageStats _empty_stats;
 
     // Storage for the stokes type vs. stokes index
     std::unordered_map<CARTA::PolarizationType, int> _stokes_indices;
@@ -129,10 +164,10 @@ protected:
     int _stokes_cdelt;
 
     // Return the shape of the specified stats dataset
-    virtual const IPos GetStatsDataShape(FileInfo::Data ds);
+    virtual const casacore::IPosition GetStatsDataShape(FileInfo::Data ds);
 
     // Return stats data as a casacore::Array of type casacore::Float or casacore::Int64
-    virtual casacore::ArrayBase* GetStatsData(FileInfo::Data ds);
+    virtual std::unique_ptr<casacore::ArrayBase> GetStatsData(FileInfo::Data ds);
 
     // Functions for loading individual types of statistics
     virtual void LoadStats2DBasic(FileInfo::Data ds);
