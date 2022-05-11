@@ -28,31 +28,29 @@
 
 using namespace carta;
 
-Region::Region(const RegionState& state, casacore::CoordinateSystem* csys)
+Region::Region(const RegionState& state, std::shared_ptr<casacore::CoordinateSystem> csys)
     : _coord_sys(csys), _valid(false), _region_changed(false), _reference_region_set(false), _region_state(state) {
     _valid = CheckPoints(state.control_points, state.type);
-}
-
-Region::~Region() {
-    delete _coord_sys;
 }
 
 // *************************************************************************
 // Region settings
 
-bool Region::UpdateRegion(const RegionState& state) {
+bool Region::UpdateRegion(const RegionState& new_state) {
     // Update region from region state
-    bool valid = CheckPoints(state.control_points, state.type);
+    bool valid = CheckPoints(new_state.control_points, new_state.type);
 
     if (valid) {
         // discern changes
-        _region_changed = (_region_state.RegionChanged(state));
+        auto state = GetRegionState();
+        _region_changed = (state.RegionChanged(new_state));
         if (_region_changed) {
             ResetRegionCache();
         }
 
         // set new region state
-        _region_state = state;
+        std::lock_guard<std::mutex> guard(_region_state_mutex);
+        _region_state = new_state;
     } else { // keep existing state
         _region_changed = false;
     }
@@ -143,11 +141,12 @@ void Region::SetReferenceRegion() {
     // Create WCRegion (world coordinate region) in the reference image according to type using wcs control points
     // Sets _reference_region (maybe to nullptr) or _reference_annotation
     casacore::WCRegion* region(nullptr);
-    std::vector<CARTA::Point> pixel_points(_region_state.control_points);
+    auto region_state = GetRegionState();
+    std::vector<CARTA::Point> pixel_points(region_state.control_points);
     std::vector<casacore::Quantity> world_points; // point holder; one CARTA point is two world points (x, y)
     casacore::IPosition pixel_axes(2, 0, 1);
     casacore::Vector<casacore::Int> abs_rel;
-    auto type(_region_state.type);
+    auto type(region_state.type);
     try {
         switch (type) {
             case CARTA::POINT: { // [(x, y)] single point
@@ -231,7 +230,7 @@ bool Region::RectanglePointsToWorld(std::vector<CARTA::Point>& pixel_points, std
     }
 
     // Get 4 corner points in pixel coordinates
-    float rotation(_region_state.rotation);
+    float rotation(GetRegionState().rotation);
     casacore::Vector<casacore::Double> x, y;
     RectanglePointsToCorners(pixel_points, rotation, x, y);
 
@@ -326,7 +325,7 @@ bool Region::EllipsePointsToWorld(
     float bmaj(pixel_points[1].x()), bmin(pixel_points[1].y());
     casacore::Quantity bmaj_world = _coord_sys->toWorldLength(bmaj, 0);
     casacore::Quantity bmin_world = _coord_sys->toWorldLength(bmin, 1);
-    ellipse_rotation = _region_state.rotation;
+    ellipse_rotation = GetRegionState().rotation;
 
     // Check if bmaj/bmin units conform (false for pV image: arcsec and Hz)
     if (!bmaj_world.isConform(bmin_world.getUnit())) {
@@ -350,42 +349,45 @@ bool Region::EllipsePointsToWorld(
 // *************************************************************************
 // Apply region to any image
 
-casacore::LCRegion* Region::GetImageRegion(
-    int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape, bool report_error) {
+std::shared_ptr<casacore::LCRegion> Region::GetImageRegion(int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys,
+    const casacore::IPosition& output_shape, const StokesSource& stokes_source, bool report_error) {
     // Apply region to non-reference image as converted polygon vertices
     // Will return nullptr if outside image or is not a closed LCRegion (line or polyline)
-    casacore::LCRegion* lc_region(nullptr);
+    std::shared_ptr<casacore::LCRegion> lc_region;
     if (IsAnnotation()) {
         return lc_region;
     }
 
     std::lock_guard<std::mutex> guard(_region_approx_mutex);
-    lc_region = GetCachedLCRegion(file_id);
+    // The cache of lattice coordinate region is only for the original image (not computed stokes image). In order to avoid the ambiguity
+    if (stokes_source.IsOriginalImage()) {
+        lc_region = GetCachedLCRegion(file_id);
+    }
 
     if (!lc_region) {
-        if (file_id == _region_state.reference_file_id) {
+        auto region_state = GetRegionState();
+        if (file_id == region_state.reference_file_id) {
             // Convert reference WCRegion to LCRegion and cache it
-            lc_region = GetConvertedLCRegion(file_id, output_csys, output_shape, report_error);
+            lc_region = GetConvertedLCRegion(file_id, output_csys, output_shape, stokes_source, report_error);
         } else {
             bool use_polygon = UseApproximatePolygon(output_csys); // check region distortion
 
             if (!use_polygon) {
                 // No distortion, do direct region conversion if possible (unless outside image or rotbox)
-                lc_region = GetConvertedLCRegion(file_id, output_csys, output_shape, report_error);
+                lc_region = GetConvertedLCRegion(file_id, output_csys, output_shape, stokes_source, report_error);
             }
 
             if (lc_region) {
-                spdlog::debug("Using direct region conversion for {}", RegionName(_region_state.type));
+                spdlog::debug("Using direct region conversion for {}", RegionName(region_state.type));
             } else {
                 // Use polygon approximation of reference region to translate to another image
-                spdlog::debug("Using polygon approximation for rotbox or distorted region {}", RegionName(_region_state.type));
+                spdlog::debug("Using polygon approximation for rotbox or distorted region {}", RegionName(region_state.type));
                 lc_region = GetAppliedPolygonRegion(file_id, output_csys, output_shape);
 
                 // Cache converted polygon
-                if (lc_region) {
-                    casacore::LCRegion* region_copy = lc_region->cloneRegion();
-                    auto polygon_region = std::shared_ptr<casacore::LCRegion>(region_copy);
-                    _polygon_regions[file_id] = std::move(polygon_region);
+                // Only for the original image (not computed stokes image). In order to avoid the ambiguity
+                if (lc_region && stokes_source.IsOriginalImage()) {
+                    _polygon_regions[file_id] = lc_region;
                 }
             }
         }
@@ -394,15 +396,16 @@ casacore::LCRegion* Region::GetImageRegion(
     return lc_region;
 }
 
-bool Region::UseApproximatePolygon(const casacore::CoordinateSystem& output_csys) {
+bool Region::UseApproximatePolygon(std::shared_ptr<casacore::CoordinateSystem> output_csys) {
     // Determine whether to convert region directly, or approximate it as a polygon in the output image.
     bool use_polygon(true);
-    CARTA::RegionType region_type = _region_state.type;
+    auto region_state = GetRegionState();
+    CARTA::RegionType region_type = region_state.type;
 
     // Check ellipse and rectangle distortion; always true for other regions (polygon and point)
     if ((region_type == CARTA::RegionType::ELLIPSE) || (region_type == CARTA::RegionType::RECTANGLE)) {
-        CARTA::Point center_point = _region_state.control_points[0];
-        double x_length(_region_state.control_points[1].x()), y_length(_region_state.control_points[1].y());
+        CARTA::Point center_point = region_state.control_points[0];
+        double x_length(region_state.control_points[1].x()), y_length(region_state.control_points[1].y());
 
         // Ratio of vector lengths in reference image region
         double ref_length_ratio;
@@ -461,8 +464,9 @@ bool Region::UseApproximatePolygon(const casacore::CoordinateSystem& output_csys
 std::vector<CARTA::Point> Region::GetRectangleMidpoints() {
     // Return midpoints of 4 sides of rectangle
     // Find corners with rotation: blc, brc, trc, tlc
+    auto region_state = GetRegionState();
     casacore::Vector<casacore::Double> x, y;
-    RectanglePointsToCorners(_region_state.control_points, _region_state.rotation, x, y);
+    RectanglePointsToCorners(region_state.control_points, region_state.rotation, x, y);
 
     std::vector<CARTA::Point> midpoints;
     CARTA::Point midpoint;
@@ -486,23 +490,22 @@ std::vector<CARTA::Point> Region::GetRectangleMidpoints() {
     return midpoints;
 }
 
-casacore::LCRegion* Region::GetCachedPolygonRegion(int file_id) {
+std::shared_ptr<casacore::LCRegion> Region::GetCachedPolygonRegion(int file_id) {
     // Return cached polygon region applied to image with file_id
-    casacore::LCRegion* lc_polygon(nullptr);
     if (_polygon_regions.count(file_id)) {
-        std::unique_lock<std::mutex> ulock(_region_mutex);
-        lc_polygon = _polygon_regions.at(file_id)->cloneRegion();
-        ulock.unlock();
+        std::lock_guard<std::mutex> guard(_region_mutex);
+        return _polygon_regions.at(file_id);
     }
-    return lc_polygon;
+
+    return std::shared_ptr<casacore::LCRegion>();
 }
 
-casacore::LCRegion* Region::GetAppliedPolygonRegion(
-    int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape) {
+std::shared_ptr<casacore::LCRegion> Region::GetAppliedPolygonRegion(
+    int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys, const casacore::IPosition& output_shape) {
     // Approximate region as polygon pixel vertices, and convert to given csys
-    casacore::LCRegion* lc_region(nullptr);
-
-    bool is_point(_region_state.type == CARTA::RegionType::POINT);
+    std::shared_ptr<casacore::LCRegion> lc_region;
+    auto region_state = GetRegionState();
+    bool is_point(region_state.type == CARTA::RegionType::POINT);
     size_t nvertices(is_point ? 1 : DEFAULT_VERTEX_COUNT);
 
     // Set reference region as polygon vertices
@@ -527,18 +530,18 @@ casacore::LCRegion* Region::GetAppliedPolygonRegion(
                     trc(i) = output_shape(i) - 1;
                 }
 
-                lc_region = new casacore::LCBox(blc, trc, output_shape);
+                lc_region.reset(new casacore::LCBox(blc, trc, output_shape));
             } else {
                 // Need 2-dim shape
                 casacore::IPosition keep_axes(2, 0, 1);
                 casacore::IPosition region_shape(output_shape.keepAxes(keep_axes));
-                lc_region = new casacore::LCPolygon(x, y, region_shape);
+                lc_region.reset(new casacore::LCPolygon(x, y, region_shape));
             }
         } catch (const casacore::AipsError& err) {
-            spdlog::error("Cannot apply {} to file {}: {}", RegionName(_region_state.type), file_id, err.getMesg());
+            spdlog::error("Cannot apply {} to file {}: {}", RegionName(region_state.type), file_id, err.getMesg());
         }
     } else {
-        spdlog::error("Error approximating {} as polygon in matched image.", RegionName(_region_state.type));
+        spdlog::error("Error approximating {} as polygon in matched image.", RegionName(region_state.type));
     }
 
     return lc_region;
@@ -548,10 +551,10 @@ std::vector<CARTA::Point> Region::GetReferencePolygonPoints(int num_vertices) {
     // Approximates reference region as polygon with input number of vertices.
     // Sets _polygon_control_points in reference image pixel coordinates.
     // Returns points as long as region type is supported and a closed region.
-
-    switch (_region_state.type) {
+    auto region_state = GetRegionState();
+    switch (region_state.type) {
         case CARTA::POINT: {
-            return _region_state.control_points;
+            return region_state.control_points;
         }
         case CARTA::RECTANGLE:
         case CARTA::POLYGON: {
@@ -568,13 +571,14 @@ std::vector<CARTA::Point> Region::GetReferencePolygonPoints(int num_vertices) {
 std::vector<CARTA::Point> Region::GetApproximatePolygonPoints(int num_vertices) {
     // Approximate RECTANGLE or POLYGON region as polygon with num_vertices, return points.
     std::vector<CARTA::Point> polygon_points;
+    auto region_state = GetRegionState();
 
     std::vector<CARTA::Point> region_points;
-    CARTA::RegionType region_type(_region_state.type);
+    CARTA::RegionType region_type(region_state.type);
     if (region_type == CARTA::RegionType::RECTANGLE) {
         // convert control points to corners to create 4-point polygon
         casacore::Vector<casacore::Double> x, y;
-        RectanglePointsToCorners(_region_state.control_points, _region_state.rotation, x, y);
+        RectanglePointsToCorners(region_state.control_points, region_state.rotation, x, y);
 
         for (size_t i = 0; i < x.size(); ++i) {
             CARTA::Point point;
@@ -583,9 +587,9 @@ std::vector<CARTA::Point> Region::GetApproximatePolygonPoints(int num_vertices) 
             region_points.push_back(point);
         }
     } else if (region_type == CARTA::RegionType::POLYGON) {
-        region_points = _region_state.control_points;
+        region_points = region_state.control_points;
     } else {
-        spdlog::error("Error approximating {} as polygon: region type not supported", RegionName(_region_state.type));
+        spdlog::error("Error approximating {} as polygon: region type not supported", RegionName(region_state.type));
         return polygon_points;
     }
 
@@ -630,14 +634,15 @@ std::vector<CARTA::Point> Region::GetApproximatePolygonPoints(int num_vertices) 
 std::vector<CARTA::Point> Region::GetApproximateEllipsePoints(int num_vertices) {
     // Approximate ELLIPSE region as polygon with num_vertices, return points
     std::vector<CARTA::Point> polygon_points;
+    auto region_state = GetRegionState();
 
-    auto cx = _region_state.control_points[0].x();
-    auto cy = _region_state.control_points[0].y();
-    auto bmaj = _region_state.control_points[1].x();
-    auto bmin = _region_state.control_points[1].y();
+    auto cx = region_state.control_points[0].x();
+    auto cy = region_state.control_points[0].y();
+    auto bmaj = region_state.control_points[1].x();
+    auto bmin = region_state.control_points[1].y();
 
     auto delta_theta = 2.0 * M_PI / num_vertices;
-    auto rotation = _region_state.rotation * M_PI / 180.0;
+    auto rotation = region_state.rotation * M_PI / 180.0;
     auto cos_rotation = cos(rotation);
     auto sin_rotation = sin(rotation);
 
@@ -670,7 +675,7 @@ double Region::GetTotalSegmentLength(std::vector<CARTA::Point>& points) {
     return total_length;
 }
 
-bool Region::ConvertPointsToImagePixels(const std::vector<CARTA::Point>& points, const casacore::CoordinateSystem& output_csys,
+bool Region::ConvertPointsToImagePixels(const std::vector<CARTA::Point>& points, std::shared_ptr<casacore::CoordinateSystem> output_csys,
     casacore::Vector<casacore::Double>& x, casacore::Vector<casacore::Double>& y) {
     // Convert pixel coords in reference image (points) to pixel coords in output image
     // Coordinates returned in x and y vectors
@@ -713,32 +718,32 @@ casacore::ArrayLattice<casacore::Bool> Region::GetImageRegionMask(int file_id) {
     // Return pixel mask for this region; requires that lcregion for this file id has been set.
     // Otherwise mask is empty array.
     casacore::ArrayLattice<casacore::Bool> mask;
-    casacore::LCRegion* lcregion(nullptr);
     if (IsAnnotation()) {
         return mask;
     }
 
-    if ((file_id == _region_state.reference_file_id) && _applied_regions.count(file_id)) {
+    std::shared_ptr<casacore::LCRegion> lcregion;
+    if ((file_id == GetRegionState().reference_file_id) && _applied_regions.count(file_id)) {
         if (_applied_regions.at(file_id)) {
             std::lock_guard<std::mutex> guard(_region_mutex);
-            lcregion = _applied_regions.at(file_id)->cloneRegion();
+            lcregion = _applied_regions.at(file_id);
         }
     } else if (_polygon_regions.count(file_id)) {
         if (_polygon_regions.at(file_id)) {
             std::lock_guard<std::mutex> guard(_region_mutex);
-            lcregion = _polygon_regions.at(file_id)->cloneRegion();
+            lcregion = _polygon_regions.at(file_id);
         }
     }
 
     if (lcregion) {
         std::lock_guard<std::mutex> guard(_region_mutex);
         // Region can either be an extension region or a fixed region, depending on whether image is matched or not
-        auto extended_region = dynamic_cast<casacore::LCExtension*>(lcregion);
+        auto extended_region = dynamic_cast<casacore::LCExtension*>(lcregion.get());
         if (extended_region) {
             auto& fixed_region = static_cast<const casacore::LCRegionFixed&>(extended_region->region());
             mask = fixed_region.getMask();
         } else {
-            auto fixed_region = dynamic_cast<casacore::LCRegionFixed*>(lcregion);
+            auto fixed_region = dynamic_cast<casacore::LCRegionFixed*>(lcregion.get());
             if (fixed_region) {
                 mask = fixed_region->getMask();
             }
@@ -752,7 +757,7 @@ casacore::ArrayLattice<casacore::Bool> Region::GetImageRegionMask(int file_id) {
 // Apply region to any image and return LCRegion Record for export
 
 casacore::TableRecord Region::GetImageRegionRecord(
-    int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape) {
+    int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys, const casacore::IPosition& output_shape) {
     // Return Record describing Region applied to output coord sys and image_shape in pixel coordinates
     casacore::TableRecord record;
 
@@ -761,7 +766,7 @@ casacore::TableRecord Region::GetImageRegionRecord(
     } else {
         // Get converted LCRegion
         // Check applied regions cache
-        casacore::LCRegion* lc_region = GetCachedLCRegion(file_id);
+        std::shared_ptr<casacore::LCRegion> lc_region = GetCachedLCRegion(file_id);
 
         if (!lc_region) {
             // Convert reference region to output image
@@ -786,24 +791,21 @@ casacore::TableRecord Region::GetImageRegionRecord(
     return record;
 }
 
-casacore::LCRegion* Region::GetCachedLCRegion(int file_id) {
+std::shared_ptr<casacore::LCRegion> Region::GetCachedLCRegion(int file_id) {
     // Return cached region applied to image with file_id
-    casacore::LCRegion* lc_region(nullptr);
-
     if (_applied_regions.count(file_id)) {
-        std::unique_lock<std::mutex> ulock(_region_mutex);
-        lc_region = _applied_regions.at(file_id)->cloneRegion();
-        ulock.unlock();
+        std::lock_guard<std::mutex> ulock(_region_mutex);
+        return _applied_regions.at(file_id);
     }
 
-    return lc_region;
+    return std::shared_ptr<casacore::LCRegion>();
 }
 
-casacore::LCRegion* Region::GetConvertedLCRegion(
-    int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape, bool report_error) {
+std::shared_ptr<casacore::LCRegion> Region::GetConvertedLCRegion(int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys,
+    const casacore::IPosition& output_shape, const StokesSource& stokes_source, bool report_error) {
     // Convert 2D reference WCRegion to LCRegion in output coord_sys and shape
-    casacore::LCRegion* lc_region(nullptr);
-    bool is_reference_image(file_id == _region_state.reference_file_id);
+    std::shared_ptr<casacore::LCRegion> lc_region;
+    bool is_reference_image(file_id == GetRegionState().reference_file_id);
 
     if (!is_reference_image && IsRotbox()) {
         // Cannot convert rotbox region, it is a polygon type.
@@ -821,37 +823,38 @@ casacore::LCRegion* Region::GetConvertedLCRegion(
         std::lock_guard<std::mutex> guard(_region_mutex);
         if (ReferenceRegionValid()) {
             std::shared_ptr<const casacore::WCRegion> reference_region = std::atomic_load(&_reference_region);
-            lc_region = reference_region->toLCRegion(output_csys, output_shape);
+            lc_region.reset(reference_region->toLCRegion(*output_csys.get(), output_shape));
         } else if (is_reference_image) {
             // Create LCRegion with control points for reference image
             casacore::TableRecord region_record = GetControlPointsRecord(output_shape);
-            lc_region = casacore::LCRegion::fromRecord(region_record, "");
+            lc_region.reset(casacore::LCRegion::fromRecord(region_record, ""));
         }
     } catch (const casacore::AipsError& err) {
         if (report_error) {
-            spdlog::error("Error converting {} to file {}: {}", RegionName(_region_state.type), file_id, err.getMesg());
+            spdlog::error("Error converting {} to file {}: {}", RegionName(GetRegionState().type), file_id, err.getMesg());
         }
     }
 
-    if (lc_region) {
+    // Cache the lattice coordinate region only for the original image (not computed stokes image). In order to avoid the ambiguity
+    if (lc_region && stokes_source.IsOriginalImage()) {
         // Make a copy and cache LCRegion in map
         std::lock_guard<std::mutex> guard(_region_mutex);
-        casacore::LCRegion* region_copy = lc_region->cloneRegion();
-        auto applied_region = std::shared_ptr<casacore::LCRegion>(region_copy);
-        _applied_regions[file_id] = std::move(applied_region);
+        _applied_regions[file_id] = lc_region;
     }
 
     return lc_region;
 }
 
 casacore::TableRecord Region::GetRegionPointsRecord(
-    int file_id, const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape) {
+    int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys, const casacore::IPosition& output_shape) {
     // Convert control points to output coord sys if needed, and return completed record.
     casacore::TableRecord record;
-    if (file_id == _region_state.reference_file_id) {
+    auto region_state = GetRegionState();
+
+    if (file_id == region_state.reference_file_id) {
         record = GetControlPointsRecord(output_shape);
     } else {
-        switch (_region_state.type) {
+        switch (region_state.type) {
             case CARTA::RegionType::POINT:
                 record = GetPointRecord(output_csys, output_shape);
                 break;
@@ -880,17 +883,18 @@ casacore::TableRecord Region::GetControlPointsRecord(const casacore::IPosition& 
     // Return region Record in pixel coords in format of LCRegion::toRecord(); no conversion (for reference image)
     // ndim needed for LCBox Record for point region
     casacore::TableRecord record;
+    auto region_state = GetRegionState();
 
-    switch (_region_state.type) {
+    switch (region_state.type) {
         case CARTA::RegionType::POINT: {
             // Box with blc=trc
             auto ndim = shape.size();
             casacore::Vector<casacore::Float> blc(ndim, 0.0), trc(ndim, 0.0);
 
-            blc(0) = _region_state.control_points[0].x();
-            blc(1) = _region_state.control_points[0].y();
-            trc(0) = _region_state.control_points[0].x();
-            trc(1) = _region_state.control_points[0].y();
+            blc(0) = region_state.control_points[0].x();
+            blc(1) = region_state.control_points[0].y();
+            trc(0) = region_state.control_points[0].x();
+            trc(1) = region_state.control_points[0].y();
 
             record.define("blc", blc);
             record.define("trc", trc);
@@ -899,10 +903,10 @@ casacore::TableRecord Region::GetControlPointsRecord(const casacore::IPosition& 
         case CARTA::RegionType::RECTANGLE: {
             // Rectangle is LCPolygon with 4 corners; calculate from center and width/height
             casacore::Vector<casacore::Float> x(5), y(5);
-            float center_x = _region_state.control_points[0].x();
-            float center_y = _region_state.control_points[0].y();
-            float width = _region_state.control_points[1].x();
-            float height = _region_state.control_points[1].y();
+            float center_x = region_state.control_points[0].x();
+            float center_y = region_state.control_points[0].y();
+            float width = region_state.control_points[1].x();
+            float height = region_state.control_points[1].y();
             float x_min(center_x - width / 2.0f), x_max(center_x + width / 2.0f);
             float y_min(center_y - height / 2.0f), y_max(center_y + height / 2.0f);
             // Bottom left
@@ -930,22 +934,22 @@ casacore::TableRecord Region::GetControlPointsRecord(const casacore::IPosition& 
         case CARTA::RegionType::POLYLINE:
         case CARTA::RegionType::POLYGON: {
             // Define "x" and "y" pixel values
-            size_t npoints(_region_state.control_points.size());
+            size_t npoints(region_state.control_points.size());
             casacore::Vector<casacore::Float> x(npoints), y(npoints);
             for (size_t i = 0; i < npoints; ++i) {
-                x(i) = _region_state.control_points[i].x();
-                y(i) = _region_state.control_points[i].y();
+                x(i) = region_state.control_points[i].x();
+                y(i) = region_state.control_points[i].y();
             }
 
-            if (_region_state.type == CARTA::RegionType::POLYGON) {
+            if (region_state.type == CARTA::RegionType::POLYGON) {
                 // LCPolygon::toRecord includes first point as last point to close region
                 x.resize(npoints + 1, true);
-                x(npoints) = _region_state.control_points[0].x();
+                x(npoints) = region_state.control_points[0].x();
                 y.resize(npoints + 1, true);
-                y(npoints) = _region_state.control_points[0].y();
+                y(npoints) = region_state.control_points[0].y();
 
                 record.define("name", "LCPolygon");
-            } else if (_region_state.type == CARTA::RegionType::LINE) {
+            } else if (region_state.type == CARTA::RegionType::LINE) {
                 // CARTA USE ONLY, name not implemented in casacore
                 record.define("name", "Line");
             } else {
@@ -958,17 +962,17 @@ casacore::TableRecord Region::GetControlPointsRecord(const casacore::IPosition& 
         }
         case CARTA::RegionType::ELLIPSE: {
             casacore::Vector<casacore::Float> center(2), radii(2);
-            center(0) = _region_state.control_points[0].x();
-            center(1) = _region_state.control_points[0].y();
-            radii(0) = _region_state.control_points[1].x();
-            radii(1) = _region_state.control_points[1].y();
+            center(0) = region_state.control_points[0].x();
+            center(1) = region_state.control_points[0].y();
+            radii(0) = region_state.control_points[1].x();
+            radii(1) = region_state.control_points[1].y();
 
             record.define("name", "LCEllipsoid");
             record.define("center", center);
             record.define("radii", radii);
 
             // LCEllipsoid measured from major (x) axis
-            casacore::Quantity theta = casacore::Quantity(_region_state.rotation + 90.0, "deg");
+            casacore::Quantity theta = casacore::Quantity(region_state.rotation + 90.0, "deg");
             theta.convert("rad");
             record.define("theta", theta.getValue());
             break;
@@ -989,7 +993,7 @@ void Region::CompleteLCRegionRecord(casacore::TableRecord& record, const casacor
         record.define("oneRel", false);
 
         casacore::Vector<casacore::Int> region_shape;
-        if (_region_state.type == CARTA::RegionType::POINT) {
+        if (GetRegionState().type == CARTA::RegionType::POINT) {
             region_shape = shape.asVector(); // LCBox uses entire image shape
         } else {
             region_shape.resize(2);
@@ -1000,7 +1004,8 @@ void Region::CompleteLCRegionRecord(casacore::TableRecord& record, const casacor
     }
 }
 
-casacore::TableRecord Region::GetPointRecord(const casacore::CoordinateSystem& output_csys, const casacore::IPosition& output_shape) {
+casacore::TableRecord Region::GetPointRecord(
+    std::shared_ptr<casacore::CoordinateSystem> output_csys, const casacore::IPosition& output_shape) {
     // Return point applied to output_csys in format of LCBox::toRecord()
     casacore::TableRecord record;
     try {
@@ -1026,10 +1031,12 @@ casacore::TableRecord Region::GetPointRecord(const casacore::CoordinateSystem& o
     return record;
 }
 
-casacore::TableRecord Region::GetPolygonRecord(const casacore::CoordinateSystem& output_csys) {
+casacore::TableRecord Region::GetPolygonRecord(std::shared_ptr<casacore::CoordinateSystem> output_csys) {
     // Return region applied to output_csys in format of LCPolygon::toRecord()
     // This is for POLYGON or RECTANGLE (points are four corners of box)
     casacore::TableRecord record;
+    auto type = GetRegionState().type;
+
     try {
         size_t npoints(_wcs_control_points.size() / 2);
         // Record fields
@@ -1047,12 +1054,12 @@ casacore::TableRecord Region::GetPolygonRecord(const casacore::CoordinateSystem&
                 x(index) = pixel_point(0);
                 y(index) = pixel_point(1);
             } else {
-                spdlog::error("Error converting {} to image pixels.", RegionName(_region_state.type));
+                spdlog::error("Error converting {} to image pixels.", RegionName(type));
                 return record;
             }
         }
 
-        if (_region_state.type == CARTA::RegionType::POLYGON) {
+        if (type == CARTA::RegionType::POLYGON) {
             // LCPolygon::toRecord adds first point as last point to close region
             x.resize(npoints + 1, true);
             x(npoints) = x(0);
@@ -1065,19 +1072,20 @@ casacore::TableRecord Region::GetPolygonRecord(const casacore::CoordinateSystem&
         record.define("x", x);
         record.define("y", y);
     } catch (const casacore::AipsError& err) {
-        spdlog::error("Error converting () to image: {}", RegionName(_region_state.type), err.getMesg());
+        spdlog::error("Error converting () to image: {}", RegionName(type), err.getMesg());
     }
 
     return record;
 }
 
-casacore::TableRecord Region::GetRotboxRecord(const casacore::CoordinateSystem& output_csys) {
+casacore::TableRecord Region::GetRotboxRecord(std::shared_ptr<casacore::CoordinateSystem> output_csys) {
     // Determine corners of unrotated box (control points) applied to output_csys.
     // Return region applied to output_csys in format of LCPolygon::toRecord()
     casacore::TableRecord record;
+
     try {
         // Get 4 corner points in pixel coordinates
-        std::vector<CARTA::Point> pixel_points(_region_state.control_points);
+        std::vector<CARTA::Point> pixel_points(GetRegionState().control_points);
         float center_x(pixel_points[0].x()), center_y(pixel_points[0].y());
         float width(pixel_points[1].x()), height(pixel_points[1].y());
 
@@ -1114,7 +1122,7 @@ casacore::TableRecord Region::GetRotboxRecord(const casacore::CoordinateSystem& 
         casacore::Vector<casacore::Double> y_wcs = world_coords.row(1);
 
         // Units for Quantities
-        casacore::Vector<casacore::String> world_units = output_csys.worldAxisUnits();
+        casacore::Vector<casacore::String> world_units = output_csys->worldAxisUnits();
         casacore::Vector<casacore::Float> corner_x(num_points), corner_y(num_points);
         for (size_t i = 0; i < num_points; i++) {
             // Convert x and y reference world coords to Quantity
@@ -1145,7 +1153,7 @@ casacore::TableRecord Region::GetRotboxRecord(const casacore::CoordinateSystem& 
     return record;
 }
 
-casacore::TableRecord Region::GetEllipseRecord(const casacore::CoordinateSystem& output_csys) {
+casacore::TableRecord Region::GetEllipseRecord(std::shared_ptr<casacore::CoordinateSystem> output_csys) {
     // Return region applied to output_csys in format of LCEllipsoid::toRecord()
     casacore::TableRecord record;
 
@@ -1163,8 +1171,8 @@ casacore::TableRecord Region::GetEllipseRecord(const casacore::CoordinateSystem&
             center(1) = pixel_point(1);
 
             // Convert radii to output world units, then to pixels
-            casacore::Vector<casacore::Double> increments(output_csys.increment());
-            casacore::Vector<casacore::String> world_units = output_csys.worldAxisUnits();
+            casacore::Vector<casacore::Double> increments(output_csys->increment());
+            casacore::Vector<casacore::String> world_units = output_csys->worldAxisUnits();
             casacore::Quantity bmaj = _wcs_control_points[2];
             bmaj.convert(world_units(0));
             casacore::Quantity bmin = _wcs_control_points[3];
@@ -1179,7 +1187,7 @@ casacore::TableRecord Region::GetEllipseRecord(const casacore::CoordinateSystem&
 
             // LCEllipsoid measured from major (x) axis
             // TODO: adjust angle for output csys
-            casacore::Quantity theta = casacore::Quantity(_region_state.rotation + 90.0, "deg");
+            casacore::Quantity theta = casacore::Quantity(GetRegionState().rotation + 90.0, "deg");
             theta.convert("rad");
             record.define("theta", theta.getValue());
         } else {
@@ -1193,7 +1201,7 @@ casacore::TableRecord Region::GetEllipseRecord(const casacore::CoordinateSystem&
 }
 
 casacore::TableRecord Region::GetAnnotationRegionRecord(
-    int file_id, const casacore::CoordinateSystem& image_csys, const casacore::IPosition& image_shape) {
+    int file_id, std::shared_ptr<casacore::CoordinateSystem> image_csys, const casacore::IPosition& image_shape) {
     // Return annotation region (not closed LCRegion) in pixel coords
     // for region applied to input image_csys with input image_shape
     casacore::TableRecord record;
@@ -1201,14 +1209,16 @@ casacore::TableRecord Region::GetAnnotationRegionRecord(
         return record;
     }
 
-    if (file_id == _region_state.reference_file_id) {
+    auto region_state = GetRegionState();
+
+    if (file_id == region_state.reference_file_id) {
         record = GetControlPointsRecord(image_shape);
     } else {
-        std::vector<CARTA::Point> line_points = _region_state.control_points;
+        std::vector<CARTA::Point> line_points = region_state.control_points;
         casacore::Vector<casacore::Double> x, y;
         if (ConvertPointsToImagePixels(line_points, image_csys, x, y)) {
             // CARTA USE ONLY, names not implemented in casacore
-            if (_region_state.type == CARTA::RegionType::LINE) {
+            if (region_state.type == CARTA::RegionType::LINE) {
                 record.define("name", "Line");
             } else {
                 record.define("name", "Polyline");
@@ -1232,7 +1242,7 @@ void Region::CompleteRegionRecord(casacore::TableRecord& record, const casacore:
         record.define("oneRel", false);
 
         casacore::Vector<casacore::Int> record_shape;
-        if (_region_state.type == CARTA::RegionType::POINT) {
+        if (GetRegionState().type == CARTA::RegionType::POINT) {
             // LCBox uses entire image shape
             record_shape = image_shape.asVector();
         } else {
@@ -1273,16 +1283,16 @@ bool Region::ConvertCartaPointToWorld(const CARTA::Point& point, std::vector<cas
     return true;
 }
 
-bool Region::ConvertWorldToPixel(std::vector<casacore::Quantity>& world_point, const casacore::CoordinateSystem& output_csys,
+bool Region::ConvertWorldToPixel(std::vector<casacore::Quantity>& world_point, std::shared_ptr<casacore::CoordinateSystem> output_csys,
     casacore::Vector<casacore::Double>& pixel_point) {
     // Convert input reference world coord to output world coord, then to pixel coord
     // Exception should be caught in calling function for creating error message
     bool success(false);
 
-    if (_coord_sys->hasDirectionCoordinate() && output_csys.hasDirectionCoordinate()) {
+    if (_coord_sys->hasDirectionCoordinate() && output_csys->hasDirectionCoordinate()) {
         // Input and output direction reference frames
         casacore::MDirection::Types reference_dir_type = _coord_sys->directionCoordinate().directionType();
-        casacore::MDirection::Types output_dir_type = output_csys.directionCoordinate().directionType();
+        casacore::MDirection::Types output_dir_type = output_csys->directionCoordinate().directionType();
 
         // Convert world point from reference to output coord sys
         casacore::MDirection world_direction(world_point[0], world_point[1], reference_dir_type);
@@ -1291,23 +1301,23 @@ bool Region::ConvertWorldToPixel(std::vector<casacore::Quantity>& world_point, c
         }
 
         // Convert output world point to pixel point
-        output_csys.directionCoordinate().toPixel(pixel_point, world_direction);
+        output_csys->directionCoordinate().toPixel(pixel_point, world_direction);
         success = true;
-    } else if (_coord_sys->hasLinearCoordinate() && output_csys.hasLinearCoordinate()) {
+    } else if (_coord_sys->hasLinearCoordinate() && output_csys->hasLinearCoordinate()) {
         // Get linear axes indices
-        auto indices = output_csys.linearAxesNumbers();
+        auto indices = output_csys->linearAxesNumbers();
         if (indices.size() != 2) {
             return false;
         }
         // Input and output linear frames
-        casacore::Vector<casacore::String> output_units = output_csys.worldAxisUnits();
-        casacore::Vector<casacore::Double> world_point_value(output_csys.nWorldAxes(), 0);
+        casacore::Vector<casacore::String> output_units = output_csys->worldAxisUnits();
+        casacore::Vector<casacore::Double> world_point_value(output_csys->nWorldAxes(), 0);
         world_point_value(indices(0)) = world_point[0].get(output_units(indices(0))).getValue();
         world_point_value(indices(1)) = world_point[1].get(output_units(indices(1))).getValue();
 
         // Convert world point to output pixel point
         casacore::Vector<casacore::Double> tmp_pixel_point;
-        output_csys.toPixel(tmp_pixel_point, world_point_value);
+        output_csys->toPixel(tmp_pixel_point, world_point_value);
 
         // Only fill the pixel coordinate results
         pixel_point.resize(2);

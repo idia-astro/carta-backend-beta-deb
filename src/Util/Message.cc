@@ -5,6 +5,8 @@
 */
 
 #include "Message.h"
+#include "DataStream/Compression.h"
+
 #include <chrono>
 
 CARTA::RegisterViewer Message::RegisterViewer(uint32_t session_id, std::string api_key, uint32_t client_feature_flags) {
@@ -22,13 +24,14 @@ CARTA::CloseFile Message::CloseFile(int32_t file_id) {
 }
 
 CARTA::OpenFile Message::OpenFile(
-    std::string directory, std::string file, std::string hdu, int32_t file_id, CARTA::RenderMode render_mode) {
+    std::string directory, std::string file, std::string hdu, int32_t file_id, CARTA::RenderMode render_mode, bool lel_expr) {
     CARTA::OpenFile open_file;
     open_file.set_directory(directory);
     open_file.set_file(file);
     open_file.set_hdu(hdu);
     open_file.set_file_id(file_id);
     open_file.set_render_mode(render_mode);
+    open_file.set_lel_expr(lel_expr);
     return open_file;
 }
 
@@ -223,12 +226,13 @@ CARTA::StopAnimation Message::StopAnimation(int32_t file_id, std::pair<int32_t, 
     return stop_animation;
 }
 
-CARTA::SetSpatialRequirements_SpatialConfig Message::SpatialConfig(std::string coordinate, int start, int end, int mip) {
+CARTA::SetSpatialRequirements_SpatialConfig Message::SpatialConfig(std::string coordinate, int start, int end, int mip, int width) {
     CARTA::SetSpatialRequirements_SpatialConfig spatial_config;
     spatial_config.set_coordinate(coordinate);
     spatial_config.set_start(start);
     spatial_config.set_end(end);
     spatial_config.set_mip(mip);
+    spatial_config.set_width(width);
     return spatial_config;
 }
 
@@ -303,6 +307,13 @@ CARTA::ResumeSession Message::ResumeSession(std::vector<CARTA::ImageProperties> 
     return resume_session;
 }
 
+CARTA::SetSpectralRequirements_SpectralConfig Message::SpectralConfig(const std::string& coordinate) {
+    CARTA::SetSpectralRequirements_SpectralConfig spectral_config;
+    spectral_config.set_coordinate(coordinate);
+    spectral_config.add_stats_types(CARTA::StatsType::Mean);
+    return spectral_config;
+}
+
 CARTA::FileListRequest Message::FileListRequest(const std::string& directory) {
     CARTA::FileListRequest file_list_request;
     file_list_request.set_directory(directory);
@@ -339,6 +350,24 @@ CARTA::SetContourParameters Message::SetContourParameters(int file_id, int ref_f
     return message;
 }
 
+CARTA::SetVectorOverlayParameters Message::SetVectorOverlayParameters(int file_id, int mip, bool fractional, double threshold,
+    bool debiasing, double q_error, double u_error, int stokes_intensity, int stokes_angle, const CARTA::CompressionType& compression_type,
+    float compression_quality) {
+    CARTA::SetVectorOverlayParameters message;
+    message.set_file_id(file_id);
+    message.set_smoothing_factor(mip);
+    message.set_fractional(fractional);
+    message.set_threshold(threshold);
+    message.set_debiasing(debiasing);
+    message.set_q_error(q_error);
+    message.set_u_error(u_error);
+    message.set_stokes_intensity(stokes_intensity);
+    message.set_stokes_angle(stokes_angle);
+    message.set_compression_type(compression_type);
+    message.set_compression_quality(compression_quality);
+    return message;
+}
+
 CARTA::EventType Message::EventType(std::vector<char>& message) {
     carta::EventHeader head = *reinterpret_cast<const carta::EventHeader*>(message.data());
     return static_cast<CARTA::EventType>(head.type);
@@ -366,6 +395,32 @@ CARTA::SpectralProfileData Message::SpectralProfileData(int32_t file_id, int32_t
             new_profile->set_raw_values_fp64(spectral_data[stats_type].data(), spectral_data[stats_type].size() * sizeof(double));
         }
     }
+    return profile_message;
+}
+
+CARTA::SpatialProfileData Message::SpatialProfileData(int32_t file_id, int32_t region_id, int32_t x, int32_t y, int32_t channel,
+    int32_t stokes, float value, int32_t start, int32_t end, std::vector<float>& profile, std::string& coordinate, int32_t mip,
+    CARTA::ProfileAxisType axis_type, float crpix, float crval, float cdelt, std::string& unit) {
+    CARTA::SpatialProfileData profile_message;
+    profile_message.set_file_id(file_id);
+    profile_message.set_region_id(region_id);
+    profile_message.set_x(x);
+    profile_message.set_y(y);
+    profile_message.set_channel(channel);
+    profile_message.set_stokes(stokes);
+    profile_message.set_value(value);
+    auto spatial_profile = profile_message.add_profiles();
+    spatial_profile->set_start(start);
+    spatial_profile->set_end(end);
+    spatial_profile->set_raw_values_fp32(profile.data(), profile.size() * sizeof(float));
+    spatial_profile->set_coordinate(coordinate);
+    spatial_profile->set_mip(mip);
+    auto profile_axis = spatial_profile->mutable_line_axis();
+    profile_axis->set_axis_type(axis_type);
+    profile_axis->set_crpix(crpix);
+    profile_axis->set_crval(crval);
+    profile_axis->set_cdelt(cdelt);
+    profile_axis->set_unit(unit);
     return profile_message;
 }
 

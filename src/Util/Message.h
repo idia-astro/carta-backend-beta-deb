@@ -20,17 +20,20 @@
 #include <carta-protobuf/resume_session.pb.h>
 #include <carta-protobuf/set_cursor.pb.h>
 #include <carta-protobuf/set_image_channels.pb.h>
+#include <carta-protobuf/spatial_profile.pb.h>
 #include <carta-protobuf/spectral_line_request.pb.h>
 #include <carta-protobuf/spectral_profile.pb.h>
 #include <carta-protobuf/stop_moment_calc.pb.h>
 #include <carta-protobuf/tiles.pb.h>
+#include <carta-protobuf/vector_overlay.pb.h>
+#include <carta-protobuf/vector_overlay_tile.pb.h>
 
 #include "Image.h"
 #include "ImageStats/BasicStatsCalculator.h"
 #include "ImageStats/Histogram.h"
 
 namespace carta {
-const uint16_t ICD_VERSION = 26;
+const uint16_t ICD_VERSION = 27;
 struct EventHeader {
     uint16_t type;
     uint16_t icd_version;
@@ -47,7 +50,7 @@ public:
     static CARTA::RegisterViewer RegisterViewer(uint32_t session_id, std::string api_key, uint32_t client_feature_flags);
     static CARTA::CloseFile CloseFile(int32_t file_id);
     static CARTA::OpenFile OpenFile(
-        std::string directory, std::string file, std::string hdu, int32_t file_id, CARTA::RenderMode render_mode);
+        std::string directory, std::string file, std::string hdu, int32_t file_id, CARTA::RenderMode render_mode, bool lel_expr = false);
     static CARTA::SetImageChannels SetImageChannels(
         int32_t file_id, int32_t channel, int32_t stokes, CARTA::CompressionType compression_type, float compression_quality);
     static CARTA::SetCursor SetCursor(int32_t file_id, float x, float y);
@@ -67,7 +70,8 @@ public:
         CARTA::CompressionType compression_type, float compression_quality, const std::vector<float>& tiles, int32_t frame_rate = 5);
     static CARTA::AnimationFlowControl AnimationFlowControl(int32_t file_id, std::pair<int32_t, int32_t> received_frame);
     static CARTA::StopAnimation StopAnimation(int32_t file_id, std::pair<int32_t, int32_t> end_frame);
-    static CARTA::SetSpatialRequirements_SpatialConfig SpatialConfig(std::string coordinate, int start = 0, int end = 0, int mip = 0);
+    static CARTA::SetSpatialRequirements_SpatialConfig SpatialConfig(
+        std::string coordinate, int start = 0, int end = 0, int mip = 0, int width = 0);
     static CARTA::IntBounds IntBounds(int min, int max);
     static CARTA::FloatBounds FloatBounds(float min, float max);
     static CARTA::MomentRequest MomentsRequest(int32_t file_id, int32_t region_id, CARTA::MomentAxis moments_axis,
@@ -75,16 +79,23 @@ public:
     static CARTA::ImageProperties ImageProperties(std::string directory, std::string file, std::string hdu, int32_t file_id,
         CARTA::RenderMode render_mode, int32_t channel, int32_t stokes);
     static CARTA::ResumeSession ResumeSession(std::vector<CARTA::ImageProperties> images);
+    static CARTA::SetSpectralRequirements_SpectralConfig SpectralConfig(const std::string& coordinate);
     static CARTA::FileListRequest FileListRequest(const std::string& directory);
     static CARTA::FileInfoRequest FileInfoRequest(const std::string& directory, const std::string& file, const std::string& hdu = "");
     static CARTA::SetContourParameters SetContourParameters(int file_id, int ref_file_id, int x_min, int x_max, int y_min, int y_max,
         const std::vector<double>& levels, CARTA::SmoothingMode smoothing_mode, int smoothing_factor, int decimation_factor,
         int compression_level, int contour_chunk_size);
+    static CARTA::SetVectorOverlayParameters SetVectorOverlayParameters(int file_id, int mip, bool fractional, double threshold,
+        bool debiasing, double q_error, double u_error, int stokes_intensity, int stokes_angle,
+        const CARTA::CompressionType& compression_type, float compression_quality);
 
     // Response messages
     static CARTA::SpectralProfileData SpectralProfileData(int32_t file_id, int32_t region_id, int32_t stokes, float progress,
         std::string& coordinate, std::vector<CARTA::StatsType>& required_stats,
         std::map<CARTA::StatsType, std::vector<double>>& spectral_data);
+    static CARTA::SpatialProfileData SpatialProfileData(int32_t file_id, int32_t region_id, int32_t x, int32_t y, int32_t channel,
+        int32_t stokes, float value, int32_t start, int32_t end, std::vector<float>& profile, std::string& coordinate, int32_t mip,
+        CARTA::ProfileAxisType axis_type, float crpix, float crval, float cdelt, std::string& unit);
 
     // Decode messages
     static CARTA::EventType EventType(std::vector<char>& message);

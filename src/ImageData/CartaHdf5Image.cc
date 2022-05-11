@@ -15,6 +15,7 @@
 #include <casacore/fits/FITS/FITSKeywordUtil.h>
 #include <casacore/fits/FITS/fits.h>
 #include <casacore/images/Images/ImageFITSConverter.h>
+#include <casacore/images/Images/ImageOpener.h>
 #include <casacore/lattices/Lattices/HDF5Lattice.h>
 
 #include "../Logger/Logger.h"
@@ -48,6 +49,14 @@ CartaHdf5Image::CartaHdf5Image(const CartaHdf5Image& other)
 
 CartaHdf5Image::~CartaHdf5Image() {
     delete _pixel_mask;
+}
+
+casacore::LatticeBase* CartaHdf5Image::OpenCartaHdf5Image(const casacore::String& name, const casacore::MaskSpecifier& spec) {
+    return new CartaHdf5Image(name, "DATA", "0", spec);
+}
+
+void CartaHdf5Image::RegisterOpenFunction() {
+    casacore::ImageOpener::registerOpenImageFunction(casacore::ImageOpener::HDF5, &OpenCartaHdf5Image);
 }
 
 // Image interface
@@ -245,6 +254,9 @@ casacore::Vector<casacore::String> CartaHdf5Image::FitsHeaderStrings() {
     return _fits_header_strings;
 }
 
+casacore::DataType CartaHdf5Image::internalDataType() {
+    return _lattice.dataType();
+}
 casacore::uInt CartaHdf5Image::advisedMaxPixels() const {
     return _lattice.advisedMaxPixels();
 }

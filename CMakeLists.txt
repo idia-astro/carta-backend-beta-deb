@@ -48,6 +48,7 @@ endif ()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 FIND_PACKAGE(CURL REQUIRED)
+FIND_PACKAGE(GSL REQUIRED)
 FIND_PACKAGE(ZFP CONFIG REQUIRED)
 FIND_PACKAGE(PkgConfig REQUIRED)
 
@@ -104,16 +105,22 @@ endif ()
 
 FIND_PACKAGE(HDF5 REQUIRED COMPONENTS CXX)
 FIND_PACKAGE(Protobuf REQUIRED)
+INCLUDE_DIRECTORIES(${PROTOBUF_INCLUDE_DIR})
 FIND_PACKAGE(Threads)
 INCLUDE_DIRECTORIES(${HDF5_INCLUDE_DIR})
 
 ADD_SUBDIRECTORY(carta-protobuf)
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
 
+if (NOT CARTA_CASACORE_ROOT)
+    set(CARTA_CASACORE_ROOT /opt/carta-casacore)
+endif()
+
 set(CARTA_CASACORE_INCLUDE_DIRS
-    /opt/carta-casacore/include
-    /opt/carta-casacore/include/casacore
-    /opt/carta-casacore/include/casacode)
+    ${CARTA_CASACORE_ROOT}/include
+    ${CARTA_CASACORE_ROOT}/include/casacore
+    ${CARTA_CASACORE_ROOT}/include/casacode)
+
 option(DevSuppressExternalWarnings "Suppress external warnings (developer use only)" OFF)
 if (DevSuppressExternalWarnings)
     message(STATUS "disabling warnings from carta-casacore")
@@ -121,7 +128,7 @@ if (DevSuppressExternalWarnings)
 else()
     INCLUDE_DIRECTORIES(${CARTA_CASACORE_INCLUDE_DIRS})
 endif()
-LINK_DIRECTORIES(/opt/carta-casacore/lib)
+LINK_DIRECTORIES(${CARTA_CASACORE_ROOT}/lib)
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     SET(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
@@ -131,20 +138,16 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     INCLUDE_DIRECTORIES(/usr/local/include)
     INCLUDE_DIRECTORIES(/usr/local/opt/openssl/include)
     INCLUDE_DIRECTORIES(/usr/local/opt/libomp/include)
-    LINK_DIRECTORIES(/usr/local/lib /usr/local/opt)
+    LINK_DIRECTORIES(/usr/local/lib)
+    LINK_DIRECTORIES(/usr/local/opt)
+    LINK_DIRECTORIES(/opt/homebrew/lib)
 endif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
 if (DisableContourCompression)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_DISABLE_CONTOUR_COMPRESSION_")
 endif (DisableContourCompression)
 
-option(UseBoostFilesystem "UseBoostFilesystem" OFF)
-
-if (UseBoostFilesystem)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_BOOST_FILESYSTEM_")
-    find_package(Boost 1.56 REQUIRED COMPONENTS filesystem)
-    set(LINK_LIBS ${LINK_LIBS} Boost::filesystem)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION LESS 11.2.0)
     set(LINK_LIBS ${LINK_LIBS} stdc++fs)
 endif ()
 
@@ -166,6 +169,7 @@ set(LINK_LIBS
         pugixml
         curl
         wcs
+        gsl
         casa_casa
         casa_coordinates
         casa_tables
@@ -193,6 +197,8 @@ set(SOURCE_FILES
         src/FileList/FileListHandler.cc
         src/FileList/FitsHduList.cc
         src/Frame/Frame.cc
+        src/Frame/VectorFieldCalculator.cc
+        src/Frame/VectorFieldSettings.cc
         src/HttpServer/HttpServer.cc
         src/ImageData/CartaFitsImage.cc
         src/ImageData/CartaHdf5Image.cc
@@ -202,6 +208,7 @@ set(SOURCE_FILES
         src/ImageData/FileLoader.cc
         src/ImageData/Hdf5Attributes.cc
         src/ImageData/Hdf5Loader.cc
+        src/ImageData/PolarizationCalculator.cc
         src/ImageData/StokesFilesConnector.cc
         src/ImageGenerators/MomentGenerator.cc
         src/ImageGenerators/PvGenerator.cc
@@ -234,7 +241,8 @@ set(SOURCE_FILES
         src/Util/Image.cc
         src/Util/Message.cc
         src/Util/String.cc
-        src/Util/Token.cc)
+        src/Util/Token.cc
+        src/ImageFitter/ImageFitter.cc)
 
 add_definitions(-DHAVE_HDF5)
 add_executable(carta_backend ${SOURCE_FILES})

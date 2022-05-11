@@ -13,12 +13,14 @@
 #include <string>
 
 #include <casacore/casa/Arrays/IPosition.h>
+#include <casacore/casa/Utilities/DataType.h>
 #include <casacore/fits/FITS/hdu.h>
 #include <casacore/images/Images/ImageFITSConverter.h>
 #include <casacore/images/Images/ImageInterface.h>
 
 #include <carta-protobuf/file_info.pb.h>
-#include "../ImageData/FileLoader.h"
+#include "ImageData/CompressedFits.h"
+#include "ImageData/FileLoader.h"
 
 namespace carta {
 
@@ -45,14 +47,18 @@ private:
     void FitsHeaderInfoToHeaderEntries(casacore::ImageFITSHeaderInfo& fhi, CARTA::FileInfoExtended& extended_info);
 
     // Computed entries
+    void AddDataTypeEntry(CARTA::FileInfoExtended& extended_info, casacore::DataType data_type);
     void AddShapeEntries(CARTA::FileInfoExtended& extended_info, const casacore::IPosition& shape, int chan_axis, int depth_axis,
         int stokes_axis, const std::vector<int>& render_axes);
-    void AddInitialComputedEntries(
-        const std::string& hdu, CARTA::FileInfoExtended& extended_info, const std::string& filename, const std::vector<int>& render_axes);
+    void AddInitialComputedEntries(const std::string& hdu, CARTA::FileInfoExtended& extended_info, const std::string& filename,
+        const std::vector<int>& render_axes, CompressedFits* compressed_fits = nullptr);
     void AddComputedEntries(CARTA::FileInfoExtended& extended_info, casacore::ImageInterface<float>* image,
         const std::vector<int>& display_axes, bool use_image_for_entries);
-    void AddComputedEntriesFromHeaders(CARTA::FileInfoExtended& extended_info, const std::vector<int>& display_axes);
+    void AddComputedEntriesFromHeaders(
+        CARTA::FileInfoExtended& extended_info, const std::vector<int>& display_axes, CompressedFits* compressed_fits = nullptr);
     void AddBeamEntry(CARTA::FileInfoExtended& extended_info, const casacore::ImageBeamSet& beam_set);
+    void AddCoordRanges(
+        CARTA::FileInfoExtended& extended_info, const casacore::CoordinateSystem& coord_system, const casacore::IPosition& image_shape);
 
     // Convert MVAngle to string; returns Quantity string if not direction
     std::string MakeAngleString(const std::string& type, double val, const std::string& unit);
