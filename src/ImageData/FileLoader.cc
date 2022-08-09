@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -72,10 +72,8 @@ FileLoader* FileLoader::GetLoader(std::shared_ptr<casacore::ImageInterface<float
 
 FileLoader::FileLoader(const std::string& filename, const std::string& directory, bool is_gz)
     : _filename(filename), _directory(directory), _is_gz(is_gz), _modify_time(0), _num_dims(0), _has_pixel_mask(false), _stokes_cdelt(0) {
-    // Set initial modify time if filename is not LEL expression for file in directory
-    if (directory.empty()) {
-        ImageUpdated();
-    }
+    // Set initial modify time
+    ImageUpdated();
 }
 
 bool FileLoader::CanOpenFile(std::string& /*error*/) {
@@ -109,8 +107,9 @@ void FileLoader::CloseImageIfUpdated() {
 bool FileLoader::ImageUpdated() {
     bool changed(false);
 
-    // Do not close compressed image or run getstat on LEL ImageExpr (sets directory)
-    if (_is_gz || !_directory.empty()) {
+    // Do not close compressed image, or run getstat on generated image (no filename, in memory only) or
+    // LEL ImageExpr (directory is set, filename is LEL expression)
+    if (_is_gz || _filename.empty() || !_directory.empty()) {
         return changed;
     }
 
@@ -451,26 +450,16 @@ bool FileLoader::GetBeams(std::vector<CARTA::Beam>& beams, std::string& error) {
 
         if (image_info.hasSingleBeam()) {
             casacore::GaussianBeam gaussian_beam = image_info.restoringBeam();
-            CARTA::Beam carta_beam;
-            carta_beam.set_channel(-1);
-            carta_beam.set_stokes(-1);
-            carta_beam.set_major_axis(gaussian_beam.getMajor("arcsec"));
-            carta_beam.set_minor_axis(gaussian_beam.getMinor("arcsec"));
-            carta_beam.set_pa(gaussian_beam.getPA(casacore::Unit("deg")));
-            beams.push_back(carta_beam);
+            beams.push_back(Message::Beam(
+                -1, -1, gaussian_beam.getMajor("arcsec"), gaussian_beam.getMinor("arcsec"), gaussian_beam.getPA(casacore::Unit("deg"))));
         } else {
             casacore::ImageBeamSet beam_set = image_info.getBeamSet();
             casacore::GaussianBeam gaussian_beam;
             for (unsigned int stokes = 0; stokes < beam_set.nstokes(); ++stokes) {
                 for (unsigned int chan = 0; chan < beam_set.nchan(); ++chan) {
                     gaussian_beam = beam_set.getBeam(chan, stokes);
-                    CARTA::Beam carta_beam;
-                    carta_beam.set_channel(chan);
-                    carta_beam.set_stokes(stokes);
-                    carta_beam.set_major_axis(gaussian_beam.getMajor("arcsec"));
-                    carta_beam.set_minor_axis(gaussian_beam.getMinor("arcsec"));
-                    carta_beam.set_pa(gaussian_beam.getPA(casacore::Unit("deg")));
-                    beams.push_back(carta_beam);
+                    beams.push_back(Message::Beam(chan, stokes, gaussian_beam.getMajor("arcsec"), gaussian_beam.getMinor("arcsec"),
+                        gaussian_beam.getPA(casacore::Unit("deg"))));
                 }
             }
         }

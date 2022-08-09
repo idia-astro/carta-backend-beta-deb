@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -17,6 +17,11 @@ SessionManager::SessionManager(ProgramSettings& settings, std::string auth_token
     : _session_number(0), _app(uWS::App()), _settings(settings), _auth_token(auth_token), _file_list_handler(file_list_handler) {}
 
 void SessionManager::DeleteSession(uint32_t session_id) {
+    std::unique_lock<std::mutex> ulock(_sessions_mutex);
+    if (!_sessions.count(session_id)) {
+        return;
+    }
+
     Session* session = _sessions[session_id];
     if (session) {
         spdlog::info(
@@ -83,8 +88,10 @@ void SessionManager::OnConnect(WSType* ws) {
     auto* loop = uWS::Loop::get();
 
     // create a Session
+    std::unique_lock<std::mutex> ulock(_sessions_mutex);
     _sessions[session_id] = new Session(ws, loop, session_id, address, _settings.top_level_folder, _settings.starting_folder,
         _file_list_handler, _settings.read_only_mode, _settings.enable_scripting);
+    ulock.unlock();
 
     _sessions[session_id]->IncreaseRefCount();
 
@@ -104,7 +111,7 @@ void SessionManager::OnDisconnect(WSType* ws, int code, std::string_view message
     uint32_t session_id = static_cast<PerSocketData*>(ws->getUserData())->session_id;
 
     // Delete the Session
-    if (_sessions.count(session_id) > 0) {
+    if (_sessions.count(session_id)) {
         _sessions[session_id]->DecreaseRefCount();
         DeleteSession(session_id);
     }
@@ -376,22 +383,6 @@ void SessionManager::OnMessage(WSType* ws, std::string_view sv_message, uWS::OpC
                     }
                     break;
                 }
-                case CARTA::EventType::SPLATALOGUE_PING: {
-                    CARTA::SplataloguePing message;
-                    if (message.ParseFromArray(event_buf, event_length)) {
-                        tsk = new OnSplataloguePingTask(session, head.request_id);
-                        message_parsed = true;
-                    }
-                    break;
-                }
-                case CARTA::EventType::SPECTRAL_LINE_REQUEST: {
-                    CARTA::SpectralLineRequest message;
-                    if (message.ParseFromArray(event_buf, event_length)) {
-                        tsk = new GeneralMessageTask<CARTA::SpectralLineRequest>(session, message, head.request_id);
-                        message_parsed = true;
-                    }
-                    break;
-                }
                 case CARTA::EventType::CONCAT_STOKES_FILES: {
                     CARTA::ConcatStokesFiles message;
                     if (message.ParseFromArray(event_buf, event_length)) {
@@ -581,14 +572,7 @@ bool SessionManager::SendScriptingRequest(int& session_id, uint32_t& scripting_r
         return false;
     }
 
-    CARTA::ScriptingRequest message;
-    message.set_scripting_request_id(scripting_request_id);
-    message.set_target(target);
-    message.set_action(action);
-    message.set_parameters(parameters);
-    message.set_async(async);
-    message.set_return_path(return_path);
-
+    auto message = Message::ScriptingRequest(scripting_request_id, target, action, parameters, async, return_path);
     session->SendScriptingRequest(message, callback, session_closed_callback);
     return true;
 }

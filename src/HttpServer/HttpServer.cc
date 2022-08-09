@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -50,7 +50,7 @@ void HttpServer::RegisterRoutes() {
     if (_enable_scripting) {
         app.post("/api/scripting/action", [&](auto res, auto req) { HandleScriptingAction(res, req); });
     } else {
-        app.post("/api/scripting/action", [&](auto res, auto req) { Forbidden(res, req); });
+        app.post("/api/scripting/action", [&](auto res, auto req) { NotImplemented(res, req); });
     }
 
     if (_enable_database) {
@@ -65,9 +65,9 @@ void HttpServer::RegisterRoutes() {
         app.put("/api/database/snippet", [&](auto res, auto req) { HandleSetObject("snippet", res, req); });
         app.del("/api/database/snippet", [&](auto res, auto req) { HandleClearObject("snippet", res, req); });
     } else {
-        app.get("/api/database/*", [&](auto res, auto req) { Forbidden(res, req); });
-        app.put("/api/database/*", [&](auto res, auto req) { Forbidden(res, req); });
-        app.del("/api/database/*", [&](auto res, auto req) { Forbidden(res, req); });
+        app.get("/api/database/*", [&](auto res, auto req) { NotImplemented(res, req); });
+        app.put("/api/database/*", [&](auto res, auto req) { NotImplemented(res, req); });
+        app.del("/api/database/*", [&](auto res, auto req) { NotImplemented(res, req); });
     }
 
     if (_enable_frontend) {
@@ -75,14 +75,15 @@ void HttpServer::RegisterRoutes() {
         // Static routes for all other files
         app.get("/*", [&](Res* res, Req* req) { HandleStaticRequest(res, req); });
     } else {
-        app.get("/*", [&](auto res, auto req) { Forbidden(res, req); });
+        app.get("/*", [&](auto res, auto req) { NotImplemented(res, req); });
     }
 }
 
-void HttpServer::HandleGetConfig(Res* res, Req* _req) {
+void HttpServer::HandleGetConfig(Res* res, Req* req) {
     json runtime_config = {{"apiAddress", "/api"}};
+    res->writeStatus(HTTP_200);
     res->writeHeader("Content-Type", "application/json");
-    res->writeStatus(HTTP_200)->end(runtime_config.dump());
+    res->end(runtime_config.dump());
 }
 
 void HttpServer::HandleStaticRequest(Res* res, Req* req) {
@@ -231,16 +232,19 @@ void HttpServer::HandleGetPreferences(Res* res, Req* req) {
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     // Read preferences JSON file
     json existing_preferences = GetExistingPreferences();
     if (!existing_preferences.empty()) {
+        res->writeStatus(HTTP_200);
+        AddNoCacheHeaders(res);
         res->writeHeader("Content-Type", "application/json");
         json body = {{"success", true}, {"preferences", existing_preferences}};
-        res->writeStatus(HTTP_200)->end(body.dump());
+        res->end(body.dump());
     } else {
-        res->writeStatus(HTTP_500)->end();
+        res->writeStatus(HTTP_500);
+        AddNoCacheHeaders(res);
+        res->end();
     }
 }
 
@@ -278,11 +282,12 @@ void HttpServer::HandleSetPreferences(Res* res, Req* req) {
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     WaitForData(res, req, [this, res](const std::string& buffer) {
         auto status = UpdatePreferencesFromString(buffer);
         res->writeStatus(status);
+        res->writeHeader("Content-Type", "application/json");
+        AddNoCacheHeaders(res);
         if (status == HTTP_200) {
             res->end(success_string);
         } else {
@@ -332,11 +337,12 @@ void HttpServer::HandleClearPreferences(Res* res, Req* req) {
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     WaitForData(res, req, [this, res](const std::string& buffer) {
         auto status = ClearPreferencesFromString(buffer);
         res->writeStatus(status);
+        AddNoCacheHeaders(res);
+        res->writeHeader("Content-Type", "application/json");
         if (status == HTTP_200) {
             res->end(success_string);
         } else {
@@ -350,12 +356,13 @@ void HttpServer::HandleGetObjects(const std::string& object_type, Res* res, Req*
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     json existing_objects = GetExistingObjects(object_type);
+    res->writeStatus(HTTP_200);
+    AddNoCacheHeaders(res);
     res->writeHeader("Content-Type", "application/json");
     json body = {{"success", true}, {(object_type + "s"), existing_objects}};
-    res->writeStatus(HTTP_200)->end(body.dump());
+    res->end(body.dump());
 }
 
 void HttpServer::HandleSetObject(const std::string& object_type, Res* res, Req* req) {
@@ -363,11 +370,12 @@ void HttpServer::HandleSetObject(const std::string& object_type, Res* res, Req* 
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     WaitForData(res, req, [this, object_type, res](const std::string& buffer) {
         auto status = SetObjectFromString(object_type, buffer);
         res->writeStatus(status);
+        AddNoCacheHeaders(res);
+        res->writeHeader("Content-Type", "application/json");
         if (status == HTTP_200) {
             res->end(success_string);
         } else {
@@ -381,11 +389,12 @@ void HttpServer::HandleClearObject(const std::string& object_type, Res* res, Req
         res->writeStatus(HTTP_403)->end();
         return;
     }
-    AddNoCacheHeaders(res);
 
     WaitForData(res, req, [this, object_type, res](const std::string& buffer) {
         auto status = ClearObjectFromString(object_type, buffer);
         res->writeStatus(status);
+        AddNoCacheHeaders(res);
+        res->writeHeader("Content-Type", "application/json");
         if (status == HTTP_200) {
             res->end(success_string);
         } else {
@@ -556,6 +565,7 @@ void HttpServer::HandleScriptingAction(Res* res, Req* req) {
 
             res->writeStatus(status);
             AddNoCacheHeaders(res);
+            res->writeHeader("Content-Type", "application/json");
             if (status == HTTP_200) {
                 res->end(response_buffer);
             } else {
@@ -651,8 +661,8 @@ void HttpServer::OnScriptingAbort(int session_id, uint32_t scripting_request_id)
     _session_manager->OnScriptingAbort(session_id, scripting_request_id);
 }
 
-void HttpServer::Forbidden(Res* res, Req* req) {
-    res->writeStatus(HTTP_403)->end();
+void HttpServer::NotImplemented(Res* res, Req* req) {
+    res->writeStatus(HTTP_501)->end();
     return;
 }
 

@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -22,7 +22,10 @@ namespace carta {
 struct FitData {
     float* data;
     size_t width;
-    size_t n; // number of pixels excluding nan pixels
+    size_t n;
+    size_t n_notnan; // number of pixels excluding nan pixels
+    size_t offset_x;
+    size_t offset_y;
 };
 
 struct FitStatus {
@@ -34,8 +37,9 @@ struct FitStatus {
 
 class ImageFitter {
 public:
-    ImageFitter(size_t width, size_t height);
-    bool FitImage(float* image, const std::vector<CARTA::GaussianComponent>& initial_values, CARTA::FittingResponse& fitting_response);
+    ImageFitter();
+    bool FitImage(size_t width, size_t height, float* image, const std::vector<CARTA::GaussianComponent>& initial_values,
+        CARTA::FittingResponse& fitting_response, size_t offset_x = 0, size_t offset_y = 0);
 
 private:
     FitData _fit_data;

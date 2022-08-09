@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -17,9 +17,9 @@
 
 #include "ImageStats/StatsCalculator.h"
 #include "Logger/Logger.h"
+#include "Timer/Timer.h"
 #include "Util/File.h"
 #include "Util/Image.h"
-#include "Util/Message.h"
 
 #include "CrtfImportExport.h"
 #include "Ds9ImportExport.h"
@@ -134,15 +134,22 @@ void RegionHandler::ImportRegion(int file_id, std::shared_ptr<Frame> frame, CART
     auto csys = frame->CoordinateSystem();
     const casacore::IPosition shape = frame->ImageShape();
     std::unique_ptr<RegionImportExport> importer;
-    switch (region_file_type) {
-        case CARTA::FileType::CRTF:
-            importer.reset(new CrtfImportExport(csys, shape, frame->StokesAxis(), file_id, region_file, file_is_filename));
-            break;
-        case CARTA::FileType::DS9_REG:
-            importer.reset(new Ds9ImportExport(csys, shape, file_id, region_file, file_is_filename));
-            break;
-        default:
-            break;
+
+    try {
+        switch (region_file_type) {
+            case CARTA::FileType::CRTF:
+                importer.reset(new CrtfImportExport(csys, shape, frame->StokesAxis(), file_id, region_file, file_is_filename));
+                break;
+            case CARTA::FileType::DS9_REG:
+                importer.reset(new Ds9ImportExport(csys, shape, file_id, region_file, file_is_filename));
+                break;
+            default:
+                break;
+        }
+    } catch (const casacore::AipsError& err) {
+        import_ack.set_success(false);
+        import_ack.set_message("Region import failed: " + err.getMesg());
+        return;
     }
 
     if (!importer) {
@@ -214,7 +221,14 @@ void RegionHandler::ExportRegion(int file_id, std::shared_ptr<Frame> frame, CART
     // Check ability to create export file if filename given
     if (!filename.empty()) {
         casacore::File export_file(filename);
-        if (!export_file.canCreate()) {
+        if (export_file.exists()) {
+            if (!export_file.isWritable()) {
+                export_ack.set_success(false);
+                export_ack.set_message("Export region failed: cannot overwrite file.");
+                export_ack.add_contents();
+                return;
+            }
+        } else if (!export_file.canCreate()) {
             export_ack.set_success(false);
             export_ack.set_message("Export region failed: cannot create file.");
             export_ack.add_contents();
@@ -970,6 +984,56 @@ void RegionHandler::StopPvCalc(int file_id) {
     }
 }
 
+bool RegionHandler::FitImage(
+    const CARTA::FittingRequest& fitting_request, CARTA::FittingResponse& fitting_response, std::shared_ptr<Frame> frame) {
+    int file_id(fitting_request.file_id());
+    int region_id(fitting_request.region_id());
+
+    if (region_id == 0) {
+        region_id = TEMP_FOV_REGION_ID;
+
+        auto fov_info(fitting_request.fov_info());
+        std::vector<CARTA::Point> points = {fov_info.control_points().begin(), fov_info.control_points().end()};
+        RegionState region_state(fitting_request.file_id(), fov_info.region_type(), points, fov_info.rotation());
+        auto csys = frame->CoordinateSystem();
+
+        if (!SetRegion(region_id, region_state, csys)) {
+            spdlog::error("Failed to set up field of view region!");
+            fitting_response.set_message("failed to set up field of view region");
+            fitting_response.set_success(false);
+            return false;
+        }
+    } else {
+        // TODO: support image fitting with regions
+        fitting_response.set_message("region not supported");
+        fitting_response.set_success(false);
+        return false;
+    }
+
+    // Save frame pointer
+    _frames[file_id] = frame;
+
+    AxisRange z_range(frame->CurrentZ());
+    int stokes = frame->CurrentStokes();
+    StokesRegion stokes_region;
+    std::shared_ptr<casacore::LCRegion> lc_region;
+
+    if (!ApplyRegionToFile(region_id, file_id, z_range, stokes, stokes_region, lc_region)) {
+        fitting_response.set_message("region is outside image or is not closed");
+        fitting_response.set_success(false);
+        return false;
+    }
+
+    bool success = false;
+    success = frame->FitImage(fitting_request, fitting_response, &stokes_region);
+
+    if (region_id == TEMP_FOV_REGION_ID) {
+        RemoveRegion(region_id);
+    }
+
+    return success;
+}
+
 // ********************************************************************
 // Fill data stream messages:
 // These always use a callback since there may be multiple region/file requirements
@@ -1044,7 +1108,7 @@ bool RegionHandler::FillRegionHistogramData(
 bool RegionHandler::GetRegionHistogramData(
     int region_id, int file_id, const std::vector<HistogramConfig>& configs, std::vector<CARTA::RegionHistogramData>& histogram_messages) {
     // Fill stats message for given region, file
-    auto t_start_region_histogram = std::chrono::high_resolution_clock::now();
+    Timer t;
 
     // Set channel range is the current channel
     int z(_frames.at(file_id)->CurrentZ());
@@ -1076,12 +1140,7 @@ bool RegionHandler::GetRegionHistogramData(
         }
 
         // Set histogram fields
-        CARTA::RegionHistogramData histogram_message;
-        histogram_message.set_file_id(file_id);
-        histogram_message.set_region_id(region_id);
-        histogram_message.set_progress(1.0); // only cube histograms have partial results
-        histogram_message.set_channel(z);
-        histogram_message.set_stokes(stokes);
+        auto histogram_message = Message::RegionHistogramData(file_id, region_id, z, stokes, 1.0);
 
         // Get image region
         if (!ApplyRegionToFile(region_id, file_id, z_range, stokes, stokes_region, lc_region)) {
@@ -1146,11 +1205,8 @@ bool RegionHandler::GetRegionHistogramData(
         histogram_messages.emplace_back(histogram_message);
     }
 
-    auto t_end_region_histogram = std::chrono::high_resolution_clock::now();
-    auto dt_region_histogram =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_region_histogram - t_start_region_histogram).count();
-    spdlog::performance(
-        "Fill region histogram in {:.3f} ms at {:.3f} MPix/s", dt_region_histogram * 1e-3, (float)stats.num_pixels / dt_region_histogram);
+    auto dt = t.Elapsed();
+    spdlog::performance("Fill region histogram in {:.3f} ms at {:.3f} MPix/s", dt.ms(), (float)stats.num_pixels / dt.us());
 
     return true;
 }
@@ -1221,7 +1277,7 @@ bool RegionHandler::FillSpectralProfileData(
                 bool report_error(true);
                 profile_ok = GetRegionSpectralData(config_region_id, config_file_id, coordinate, stokes_index, required_stats, report_error,
                     [&](std::map<CARTA::StatsType, std::vector<double>> results, float progress) {
-                        CARTA::SpectralProfileData profile_message = Message::SpectralProfileData(
+                        auto profile_message = Message::SpectralProfileData(
                             config_file_id, config_region_id, stokes_index, progress, coordinate, required_stats, results);
                         cb(profile_message); // send (partial profile) data
                     });
@@ -1247,7 +1303,7 @@ bool RegionHandler::GetRegionSpectralData(int region_id, int file_id, std::strin
 
     bool use_current_stokes(coordinate == "z");
 
-    auto t_start_spectral_profile = std::chrono::high_resolution_clock::now();
+    Timer t;
 
     std::shared_lock frame_lock(_frames.at(file_id)->GetActiveTaskMutex());
     auto region = GetRegion(region_id);
@@ -1294,9 +1350,7 @@ bool RegionHandler::GetRegionSpectralData(int region_id, int file_id, std::strin
         // Use cursor spectral profile for point region
         if (initial_region_state.type == CARTA::RegionType::POINT) {
             casacore::IPosition origin = lc_region->boundingBox().start();
-            CARTA::Point point;
-            point.set_x(origin(0));
-            point.set_y(origin(1));
+            auto point = Message::Point(origin(0), origin(1));
 
             auto get_stokes_profiles_data = [&](ProfilesMap& tmp_results, int tmp_stokes) {
                 std::vector<float> tmp_profile;
@@ -1397,10 +1451,7 @@ bool RegionHandler::GetRegionSpectralData(int region_id, int file_id, std::strin
                 }
             }
 
-            auto t_end_spectral_profile = std::chrono::high_resolution_clock::now();
-            auto dt_spectral_profile =
-                std::chrono::duration_cast<std::chrono::microseconds>(t_end_spectral_profile - t_start_spectral_profile).count();
-            spdlog::performance("Fill spectral profile in {:.3f} ms", dt_spectral_profile * 1e-3);
+            spdlog::performance("Fill spectral profile in {:.3f} ms", t.Elapsed().ms());
             return true;
         }
     } // end loader swizzled data
@@ -1511,11 +1562,7 @@ bool RegionHandler::GetRegionSpectralData(int region_id, int file_id, std::strin
         }
     }
 
-    auto t_end_spectral_profile = std::chrono::high_resolution_clock::now();
-    auto dt_spectral_profile =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_spectral_profile - t_start_spectral_profile).count();
-    spdlog::performance("Fill spectral profile in {:.3f} ms", dt_spectral_profile * 1e-3);
-
+    spdlog::performance("Fill spectral profile in {:.3f} ms", t.Elapsed().ms());
     return true;
 }
 
@@ -1594,7 +1641,7 @@ bool RegionHandler::FillRegionStatsData(std::function<void(CARTA::RegionStatsDat
 bool RegionHandler::GetRegionStatsData(
     int region_id, int file_id, int stokes, const std::vector<CARTA::StatsType>& required_stats, CARTA::RegionStatsData& stats_message) {
     // Fill stats message for given region, file
-    auto t_start_region_stats = std::chrono::high_resolution_clock::now();
+    Timer t;
 
     int z(_frames.at(file_id)->CurrentZ());
     stokes = (stokes == CURRENT_STOKES) ? _frames.at(file_id)->CurrentStokes() : stokes;
@@ -1650,10 +1697,7 @@ bool RegionHandler::GetRegionStatsData(
         // cache results
         _stats_cache[cache_id] = StatsCache(stats_results);
 
-        auto t_end_region_stats = std::chrono::high_resolution_clock::now();
-        auto dt_region_stats = std::chrono::duration_cast<std::chrono::microseconds>(t_end_region_stats - t_start_region_stats).count();
-        spdlog::performance("Fill region stats in {:.3f} ms", dt_region_stats * 1e-3);
-
+        spdlog::performance("Fill region stats in {:.3f} ms", t.Elapsed().ms());
         return true;
     }
 
@@ -1744,8 +1788,8 @@ bool RegionHandler::FillLineSpatialProfileData(int file_id, int region_id, std::
                 float crval = (axis_type == CARTA::ProfileAxisType::Offset ? 0.0 : crpix * cdelt);
                 std::string unit = adjusted_increment.getUnit();
 
-                CARTA::SpatialProfileData profile_message = Message::SpatialProfileData(file_id, region_id, x, y, channel, stokes_index,
-                    value, start, end, profile, coordinate, mip, axis_type, crpix, crval, cdelt, unit);
+                auto profile_message = Message::SpatialProfileData(file_id, region_id, x, y, channel, stokes_index, value, start, end,
+                    profile, coordinate, mip, axis_type, crpix, crval, cdelt, unit);
                 cb(profile_message);
             });
     }
@@ -2003,13 +2047,8 @@ bool RegionHandler::GetFixedPixelRegionProfiles(int file_id, int region_id, int 
 
             // Set temporary region state
             std::vector<CARTA::Point> control_points;
-            CARTA::Point point;
-            point.set_x(box_centers[iregion][0]);
-            point.set_y(box_centers[iregion][1]);
-            control_points.push_back(point);
-            point.set_x(width);
-            point.set_y(height);
-            control_points.push_back(point);
+            control_points.push_back(Message::Point(box_centers[iregion]));
+            control_points.push_back(Message::Point(width, height));
             RegionState temp_region_state(region_state.reference_file_id, CARTA::RegionType::RECTANGLE, control_points, rotation);
 
             // Get mean profile for requested file_id and log number of pixels in region
@@ -2104,13 +2143,8 @@ bool RegionHandler::GetFixedPixelRegionProfiles(int file_id, int region_id, int 
 
                 // Set box region
                 std::vector<CARTA::Point> control_points;
-                CARTA::Point point;
-                point.set_x(box_centers[iregion][0]);
-                point.set_y(box_centers[iregion][1]);
-                control_points.push_back(point);
-                point.set_x(width);
-                point.set_y(height);
-                control_points.push_back(point);
+                control_points.push_back(Message::Point(box_centers[iregion]));
+                control_points.push_back(Message::Point(width, height));
                 RegionState temp_region_state(region_state.reference_file_id, CARTA::RegionType::RECTANGLE, control_points, rotation);
 
                 // Add mean profile for box region to profiles
@@ -2548,7 +2582,6 @@ RegionState RegionHandler::GetTemporaryRegionState(std::shared_ptr<casacore::Coo
 
     // Control points for polygon region state
     std::vector<CARTA::Point> control_points(4);
-    CARTA::Point point;
 
     // Create line perpendicular to line (along "width axis") at box start to find box corners
     std::unique_lock<std::mutex> mvdir_lock(_pix_mvdir_mutex);
@@ -2559,9 +2592,7 @@ RegionState RegionHandler::GetTemporaryRegionState(std::shared_ptr<casacore::Coo
     if (corner.empty()) {
         return RegionState();
     }
-    point.set_x(corner[0]);
-    point.set_y(corner[1]);
-    control_points[0] = point;
+    control_points[0] = Message::Point(corner);
 
     // Endpoint in negative direction width*2 pixels out from box start
     target_end = {box_start[0] + (pixel_width * 2 * cos_x), box_start[1] + (pixel_width * 2 * sin_x)};
@@ -2569,9 +2600,7 @@ RegionState RegionHandler::GetTemporaryRegionState(std::shared_ptr<casacore::Coo
     if (corner.empty()) {
         return RegionState();
     }
-    point.set_x(corner[0]);
-    point.set_y(corner[1]);
-    control_points[3] = point;
+    control_points[3] = Message::Point(corner);
 
     // Find box corners from box end
     // Endpoint in positive direction width*2 pixels out from box end
@@ -2580,9 +2609,7 @@ RegionState RegionHandler::GetTemporaryRegionState(std::shared_ptr<casacore::Coo
     if (corner.empty()) {
         return RegionState();
     }
-    point.set_x(corner[0]);
-    point.set_y(corner[1]);
-    control_points[1] = point;
+    control_points[1] = Message::Point(corner);
 
     // Endpoint in negative direction width*2 pixels out from box end
     target_end = {box_end[0] + (pixel_width * 2 * cos_x), box_end[1] + (pixel_width * 2 * sin_x)};
@@ -2590,9 +2617,7 @@ RegionState RegionHandler::GetTemporaryRegionState(std::shared_ptr<casacore::Coo
     if (corner.empty()) {
         return RegionState();
     }
-    point.set_x(corner[0]);
-    point.set_y(corner[1]);
-    control_points[2] = point;
+    control_points[2] = Message::Point(corner);
     mvdir_lock.unlock();
 
     float polygon_rotation(0.0);
