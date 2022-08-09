@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -41,6 +41,7 @@ private:
     // Sessions map
     uint32_t _session_number;
     std::unordered_map<uint32_t, Session*> _sessions;
+    std::mutex _sessions_mutex;
     // uWebSockets app
     uWS::App _app;
     // Shared objects

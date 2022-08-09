@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -7,6 +7,7 @@
 #ifndef CARTA_BACKEND_IMAGEDATA_CASALOADER_H_
 #define CARTA_BACKEND_IMAGEDATA_CASALOADER_H_
 
+#include <casacore/casa/IO/LockFile.h>
 #include <casacore/images/Images/ImageOpener.h>
 #include <casacore/images/Images/PagedImage.h>
 #include <casacore/images/Images/TempImage.h>
@@ -29,6 +30,17 @@ CasaLoader::CasaLoader(const std::string& filename) : FileLoader(filename) {}
 
 void CasaLoader::OpenFile(const std::string& /*hdu*/) {
     if (!_image) {
+        // Check if image is locked; PagedImage AutoNoReadLocking option tries to acquire a lock and blocks until it is free
+        bool create(false), add_request(false), must_exist(false);
+        auto lock_file =
+            std::unique_ptr<casacore::LockFile>(new casacore::LockFile(_filename + "/table.lock", 5, create, add_request, must_exist));
+
+        if (!lock_file->canLock(casacore::FileLocker::Read)) {
+            throw(casacore::AipsError("Cannot open image, locked by another process."));
+        }
+
+        lock_file.reset(nullptr);
+
         bool converted(false);
 
         try {

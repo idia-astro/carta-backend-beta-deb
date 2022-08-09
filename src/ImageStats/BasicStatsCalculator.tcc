@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -66,8 +66,8 @@ void BasicStatsCalculator<T>::reduce() {
                 _max_val = val;
             }
             _num_pixels++;
-            _sum += val;
-            _sum_squares += val * val;
+            _sum += (double)val;
+            _sum_squares += std::pow(val, 2);
         }
     }
 }

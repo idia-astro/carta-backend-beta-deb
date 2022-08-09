@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -10,10 +10,6 @@
 #define CARTA_BACKEND_REGION_REGIONHANDLER_H_
 
 #include <vector>
-
-#include <carta-protobuf/export_region.pb.h>
-#include <carta-protobuf/import_region.pb.h>
-#include <carta-protobuf/region_requirements.pb.h>
 
 #include "Cache/RequirementsCache.h"
 #include "Frame/Frame.h"
@@ -95,6 +91,9 @@ public:
     bool CalculatePvImage(int file_id, int region_id, int width, std::shared_ptr<Frame>& frame, GeneratorProgressCallback progress_callback,
         CARTA::PvResponse& pv_response, GeneratedImage& pv_image);
     void StopPvCalc(int file_id);
+
+    // Image fitting
+    bool FitImage(const CARTA::FittingRequest& fitting_request, CARTA::FittingResponse& fitting_response, std::shared_ptr<Frame> frame);
 
 private:
     // Get unique region id (max id + 1)

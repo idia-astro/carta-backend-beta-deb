@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -48,7 +48,7 @@ public:
     carta_sink()
         : ansicolor_sink<details::console_mutex>(stdout, color_mode::automatic),
           mutex_(details::console_mutex::mutex()),
-          formatter_(details::make_unique<spdlog::pattern_formatter>()) {
+          formatter_(details::make_unique<spdlog::pattern_formatter>(pattern_time_type::utc)) {
         target_file_ = stdout;
         colors_[level::trace] = to_string_(white);
         colors_[level::debug] = to_string_(cyan);

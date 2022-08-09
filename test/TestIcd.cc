@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -16,7 +16,6 @@ class IcdTest : public ::testing::Test, public FileFinder {
     std::unique_ptr<BackendModel> _dummy_backend;
     std::pair<std::vector<char>, bool> _message_pair; // Resulting message
     int _message_count = 0;
-    carta::Timer _timer;
 
 public:
     IcdTest() {
@@ -28,13 +27,11 @@ public:
         bool expected_message) {
         CARTA::RegisterViewer register_viewer = Message::RegisterViewer(session_id, api_key, client_feature_flags);
 
-        _timer.Start("Access Carta");
+        carta::Timer t;
 
         _dummy_backend->Receive(register_viewer);
 
-        _timer.End("Access Carta");
-
-        EXPECT_LT(_timer.GetMeasurement("Access Carta").count(), 100); // expect the process time within 100 ms
+        EXPECT_LT(t.Elapsed().ms(), 100); // expect the process time within 100 ms
 
         _message_count = 0;
 

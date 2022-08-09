@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -21,10 +21,8 @@
 #include <casacore/lattices/Lattices/ArrayLattice.h>
 #include <casacore/tables/Tables/TableRecord.h>
 
-#include <carta-protobuf/defs.pb.h>
-#include <carta-protobuf/enums.pb.h>
-
 #include "Util/Image.h"
+#include "Util/Message.h"
 
 #define DEFAULT_VERTEX_COUNT 1000
 
@@ -166,12 +164,14 @@ private:
     std::shared_ptr<casacore::LCRegion> GetCachedPolygonRegion(int file_id);
     std::shared_ptr<casacore::LCRegion> GetAppliedPolygonRegion(
         int file_id, std::shared_ptr<casacore::CoordinateSystem> output_csys, const casacore::IPosition& output_shape);
-    std::vector<CARTA::Point> GetReferencePolygonPoints(int num_vertices);
-    std::vector<CARTA::Point> GetApproximatePolygonPoints(int num_vertices);
+    std::vector<std::vector<CARTA::Point>> GetReferencePolygonPoints(int num_vertices);
+    std::vector<std::vector<CARTA::Point>> GetApproximatePolygonPoints(int num_vertices);
     std::vector<CARTA::Point> GetApproximateEllipsePoints(int num_vertices);
     double GetTotalSegmentLength(std::vector<CARTA::Point>& points);
     bool ConvertPointsToImagePixels(const std::vector<CARTA::Point>& points, std::shared_ptr<casacore::CoordinateSystem> output_csys,
         casacore::Vector<casacore::Double>& x, casacore::Vector<casacore::Double>& y);
+    void RemoveHorizontalPolygonPoints(casacore::Vector<casacore::Double>& x, casacore::Vector<casacore::Double>& y);
+    bool ValuesNear(float val1, float val2);
 
     // Region applied to any image; used for export
     std::shared_ptr<casacore::LCRegion> GetCachedLCRegion(int file_id);

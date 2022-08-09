@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -25,6 +25,7 @@
 #include "DataStream/Smoothing.h"
 #include "ImageStats/StatsCalculator.h"
 #include "Logger/Logger.h"
+#include "Timer/Timer.h"
 
 static const int HIGH_COMPRESSION_QUALITY(32);
 
@@ -379,7 +380,7 @@ bool Frame::FillImageCache() {
         return true;
     }
 
-    auto t_start_set_image_cache = std::chrono::high_resolution_clock::now();
+    Timer t;
     StokesSlicer stokes_slicer = GetImageSlicer(AxisRange(_z_index), _stokes_index);
     _image_cache_size = stokes_slicer.slicer.length().product();
     _image_cache = std::make_unique<float[]>(_image_cache_size);
@@ -388,11 +389,9 @@ bool Frame::FillImageCache() {
         return false;
     }
 
-    auto t_end_set_image_cache = std::chrono::high_resolution_clock::now();
-    auto dt_set_image_cache =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_set_image_cache - t_start_set_image_cache).count();
-    spdlog::performance("Load {}x{} image to cache in {:.3f} ms at {:.3f} MPix/s", _width, _height, dt_set_image_cache * 1e-3,
-        (float)(_width * _height) / dt_set_image_cache);
+    auto dt = t.Elapsed();
+    spdlog::performance(
+        "Load {}x{} image to cache in {:.3f} ms at {:.3f} MPix/s", _width, _height, dt.ms(), (float)(_width * _height) / dt.us());
 
     _image_cache_valid = true;
     return true;
@@ -448,7 +447,7 @@ bool Frame::GetRasterData(std::vector<float>& image_data, CARTA::ImageBounds& bo
     bool write_lock(false);
     queuing_rw_mutex_scoped cache_lock(&_cache_mutex, write_lock);
 
-    auto t_start_raster_data_filter = std::chrono::high_resolution_clock::now();
+    Timer t;
     if (mean_filter && mip > 1) {
         // Perform down-sampling by calculating the mean for each MIPxMIP block
         BlockSmooth(
@@ -458,12 +457,10 @@ bool Frame::GetRasterData(std::vector<float>& image_data, CARTA::ImageBounds& bo
         NearestNeighbor(_image_cache.get(), image_data.data(), num_image_columns, row_length_region, num_rows_region, x, y, mip);
     }
 
-    auto t_end_raster_data_filter = std::chrono::high_resolution_clock::now();
-    auto dt_raster_data_filter =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_raster_data_filter - t_start_raster_data_filter).count();
+    auto dt = t.Elapsed();
     spdlog::performance("{} filter {}x{} raster data to {}x{} in {:.3f} ms at {:.3f} MPix/s",
-        (mean_filter && mip > 1) ? "Mean" : "Nearest neighbour", req_height, req_width, num_rows_region, row_length_region,
-        dt_raster_data_filter * 1e-3, (float)(num_rows_region * row_length_region) / dt_raster_data_filter);
+        (mean_filter && mip > 1) ? "Mean" : "Nearest neighbour", req_height, req_width, num_rows_region, row_length_region, dt.ms(),
+        (float)(num_rows_region * row_length_region) / dt.us());
 
     return true;
 }
@@ -511,7 +508,7 @@ bool Frame::FillRasterTileData(CARTA::RasterTileData& raster_tile_data, const Ti
                 return false;
             }
 
-            auto t_start_compress_tile_data = std::chrono::high_resolution_clock::now();
+            Timer t;
 
             // compress the data with the default precision
             std::vector<char> compression_buffer;
@@ -549,11 +546,9 @@ bool Frame::FillRasterTileData(CARTA::RasterTileData& raster_tile_data, const Ti
                 "The compression ratio for tile (layer:{}, x:{}, y:{}) is {:.3f}.", tile.layer, tile.x, tile.y, compression_ratio);
 
             // Measure duration for compress tile data
-            auto t_end_compress_tile_data = std::chrono::high_resolution_clock::now();
-            auto dt_compress_tile_data =
-                std::chrono::duration_cast<std::chrono::microseconds>(t_end_compress_tile_data - t_start_compress_tile_data).count();
-            spdlog::performance("Compress {}x{} tile data in {:.3f} ms at {:.3f} MPix/s", tile_width, tile_height,
-                dt_compress_tile_data * 1e-3, (float)(tile_width * tile_height) / dt_compress_tile_data);
+            auto dt = t.Elapsed();
+            spdlog::performance("Compress {}x{} tile data in {:.3f} ms at {:.3f} MPix/s", tile_width, tile_height, dt.ms(),
+                (float)(tile_width * tile_height) / dt.us());
 
             return !(ZStokesChanged(z, stokes));
         }
@@ -731,20 +726,13 @@ bool Frame::FillRegionHistogramData(
     int stokes;
     bool have_valid_histogram(false);
     for (auto& histogram_config : requirements) {
-        auto t_start_image_histogram = std::chrono::high_resolution_clock::now();
-
-        // create and fill region histogram data message
-        CARTA::RegionHistogramData histogram_data;
-        histogram_data.set_file_id(file_id);
-        histogram_data.set_region_id(region_id);
-        histogram_data.set_progress(1.0);
+        Timer t;
 
         // Set channel
         int z = histogram_config.channel;
         if ((z == CURRENT_Z) || (Depth() == 1)) {
             z = CurrentZ();
         }
-        histogram_data.set_channel(z);
 
         // Use number of bins in requirements
         int num_bins = histogram_config.num_bins;
@@ -753,7 +741,9 @@ bool Frame::FillRegionHistogramData(
         if (!GetStokesTypeIndex(histogram_config.coordinate, stokes)) {
             continue;
         }
-        histogram_data.set_stokes(stokes);
+
+        // create and fill region histogram data message
+        auto histogram_data = Message::RegionHistogramData(file_id, region_id, z, stokes, 1.0);
 
         // fill histogram submessage from cache (loader or local)
         auto* histogram = histogram_data.mutable_histograms();
@@ -777,11 +767,8 @@ bool Frame::FillRegionHistogramData(
             }
 
             if (histogram_filled) {
-                auto t_end_image_histogram = std::chrono::high_resolution_clock::now();
-                auto dt_image_histogram =
-                    std::chrono::duration_cast<std::chrono::microseconds>(t_end_image_histogram - t_start_image_histogram).count();
-                spdlog::performance("Fill image histogram in {:.3f} ms at {:.3f} MPix/s", dt_image_histogram * 1e-3,
-                    (float)stats.num_pixels / dt_image_histogram);
+                auto dt = t.Elapsed();
+                spdlog::performance("Fill image histogram in {:.3f} ms at {:.3f} MPix/s", dt.ms(), (float)stats.num_pixels / dt.us());
             }
         } else {
             region_histogram_callback(histogram_data); // send region histogram data message
@@ -1006,11 +993,7 @@ bool Frame::FillRegionStatsData(std::function<void(CARTA::RegionStatsData stats_
         }
 
         // Set response message
-        CARTA::RegionStatsData stats_data;
-        stats_data.set_file_id(file_id);
-        stats_data.set_region_id(region_id);
-        stats_data.set_channel(z);
-        stats_data.set_stokes(stokes);
+        auto stats_data = Message::RegionStatsData(file_id, region_id, z, stokes);
 
         // Set required stats types
         std::vector<CARTA::StatsType> required_stats;
@@ -1035,8 +1018,7 @@ bool Frame::FillRegionStatsData(std::function<void(CARTA::RegionStatsData stats_
             continue;
         }
 
-        auto t_start_image_stats = std::chrono::high_resolution_clock::now();
-
+        Timer t;
         // Calculate stats map using slicer
         StokesSlicer stokes_slicer = GetImageSlicer(AxisRange(z), stokes);
         bool per_z(false);
@@ -1055,9 +1037,7 @@ bool Frame::FillRegionStatsData(std::function<void(CARTA::RegionStatsData stats_
             // cache results
             _image_stats[cache_key] = stats_map;
 
-            auto t_end_image_stats = std::chrono::high_resolution_clock::now();
-            auto dt_image_stats = std::chrono::duration_cast<std::chrono::microseconds>(t_end_image_stats - t_start_image_stats).count();
-            spdlog::performance("Fill image stats in {:.3f} ms", dt_image_stats * 1e-3);
+            spdlog::performance("Fill image stats in {:.3f} ms", t.Elapsed().ms());
         }
     }
 
@@ -1088,7 +1068,7 @@ bool Frame::FillSpatialProfileData(PointXy point, std::vector<CARTA::SetSpatialR
         return false;
     }
 
-    auto t_start_spatial_profile = std::chrono::high_resolution_clock::now();
+    Timer t;
 
     // The starting index of the tile which contains this index.
     // A custom tile size can be specified so that this can be reused to calculate a chunk index.
@@ -1117,13 +1097,7 @@ bool Frame::FillSpatialProfileData(PointXy point, std::vector<CARTA::SetSpatialR
     }
 
     if (spatial_configs.empty()) { // Only send a spatial data message for the cursor value with current stokes
-        CARTA::SpatialProfileData spatial_data;
-        spatial_data.set_x(x);
-        spatial_data.set_y(y);
-        spatial_data.set_channel(CurrentZ());
-        spatial_data.set_stokes(CurrentStokes());
-        spatial_data.set_value(cursor_value_with_current_stokes);
-
+        auto spatial_data = Message::SpatialProfileData(x, y, CurrentZ(), CurrentStokes(), cursor_value_with_current_stokes);
         spatial_data_vec.push_back(spatial_data);
         return true;
     }
@@ -1156,19 +1130,14 @@ bool Frame::FillSpatialProfileData(PointXy point, std::vector<CARTA::SetSpatialR
         } else {
             StokesSlicer stokes_slicer = GetImageSlicer(AxisRange(x), AxisRange(y), AxisRange(CurrentZ()), stokes);
             const auto N = stokes_slicer.slicer.length().product();
-            std::shared_ptr<float[]> data(new float[N]); // zero initialization
+            std::unique_ptr<float[]> data(new float[N]); // zero initialization
             if (GetSlicerData(stokes_slicer, data.get())) {
                 cursor_value = data[0];
             }
         }
 
         // set message fields
-        CARTA::SpatialProfileData spatial_data;
-        spatial_data.set_x(x);
-        spatial_data.set_y(y);
-        spatial_data.set_channel(CurrentZ());
-        spatial_data.set_stokes(stokes);
-        spatial_data.set_value(cursor_value);
+        auto spatial_data = Message::SpatialProfileData(x, y, CurrentZ(), stokes, cursor_value);
 
         // add profiles
         std::vector<float> profile;
@@ -1378,10 +1347,7 @@ bool Frame::FillSpatialProfileData(PointXy point, std::vector<CARTA::SetSpatialR
         spatial_data_vec.emplace_back(spatial_data);
     }
 
-    auto t_end_spatial_profile = std::chrono::high_resolution_clock::now();
-    auto dt_spatial_profile =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_spatial_profile - t_start_spatial_profile).count();
-    spdlog::performance("Fill spatial profile in {:.3f} ms", dt_spatial_profile * 1e-3);
+    spdlog::performance("Fill spatial profile in {:.3f} ms", t.Elapsed().ms());
 
     return true;
 }
@@ -1448,8 +1414,7 @@ bool Frame::FillSpectralProfileData(std::function<void(CARTA::SpectralProfileDat
 
     PointXy start_cursor = _cursor; // if cursor changes, cancel profiles
 
-    auto t_start_spectral_profile = std::chrono::high_resolution_clock::now();
-
+    Timer t;
     std::vector<SpectralConfig> current_configs;
     std::unique_lock<std::mutex> ulock(_spectral_mutex);
     current_configs.insert(current_configs.begin(), _cursor_spectral_configs.begin(), _cursor_spectral_configs.end());
@@ -1471,9 +1436,7 @@ bool Frame::FillSpectralProfileData(std::function<void(CARTA::SpectralProfileDat
         }
 
         // Create final profile message for callback
-        CARTA::SpectralProfileData profile_message;
-        profile_message.set_stokes(CurrentStokes());
-        profile_message.set_progress(1.0);
+        auto profile_message = Message::SpectralProfileData(CurrentStokes(), 1.0);
         auto spectral_profile = profile_message.add_profiles();
         spectral_profile->set_coordinate(config.coordinate);
         // point spectral profiles only have one stats type
@@ -1527,7 +1490,7 @@ bool Frame::FillSpectralProfileData(std::function<void(CARTA::SpectralProfileDat
                     count(_z_axis) = nz;
                     casacore::Slicer slicer(start, count);
                     const auto N = slicer.length().product();
-                    std::shared_ptr<float[]> buffer(new float[N]);
+                    std::unique_ptr<float[]> buffer(new float[N]);
                     end_channel = start(_z_axis) + nz - 1;
                     auto stokes_slicer =
                         GetImageSlicer(AxisRange(x_index), AxisRange(y_index), AxisRange(start(_z_axis), end_channel), stokes);
@@ -1574,9 +1537,7 @@ bool Frame::FillSpectralProfileData(std::function<void(CARTA::SpectralProfileDat
                         // reset profile timer and send partial profile message
                         t_start_profile = t_end_slice;
 
-                        CARTA::SpectralProfileData partial_data;
-                        partial_data.set_stokes(CurrentStokes());
-                        partial_data.set_progress(progress);
+                        auto partial_data = Message::SpectralProfileData(CurrentStokes(), progress);
                         auto partial_profile = partial_data.add_profiles();
                         partial_profile->set_stats_type(config.all_stats[0]);
                         partial_profile->set_coordinate(config.coordinate);
@@ -1588,10 +1549,7 @@ bool Frame::FillSpectralProfileData(std::function<void(CARTA::SpectralProfileDat
         }
     }
 
-    auto t_end_spectral_profile = std::chrono::high_resolution_clock::now();
-    auto dt_spectral_profile =
-        std::chrono::duration_cast<std::chrono::microseconds>(t_end_spectral_profile - t_start_spectral_profile).count();
-    spdlog::performance("Fill cursor spectral profile in {:.3f} ms", dt_spectral_profile * 1e-3);
+    spdlog::performance("Fill cursor spectral profile in {:.3f} ms", t.Elapsed().ms());
 
     return true;
 }
@@ -1648,7 +1606,7 @@ casacore::IPosition Frame::GetRegionShape(const StokesRegion& stokes_region) {
 
 bool Frame::GetRegionData(const StokesRegion& stokes_region, std::vector<float>& data) {
     // Get image data with a region applied
-    auto t_start_get_subimage_data = std::chrono::high_resolution_clock::now();
+    Timer t;
     casacore::SubImage<float> sub_image;
     std::unique_lock<std::mutex> ulock(_image_mutex);
     bool subimage_ok = _loader->GetSubImage(stokes_region, sub_image);
@@ -1694,10 +1652,7 @@ bool Frame::GetRegionData(const StokesRegion& stokes_region, std::vector<float>&
             }
         }
 
-        auto t_end_get_subimage_data = std::chrono::high_resolution_clock::now();
-        auto dt_get_subimage_data =
-            std::chrono::duration_cast<std::chrono::microseconds>(t_end_get_subimage_data - t_start_get_subimage_data).count();
-        spdlog::performance("Get region subimage data in {:.3f} ms", dt_get_subimage_data * 1e-3);
+        spdlog::performance("Get region subimage data in {:.3f} ms", t.Elapsed().ms());
 
         return true;
     } catch (casacore::AipsError& err) {
@@ -1794,17 +1749,38 @@ void Frame::StopMomentCalc() {
     }
 }
 
-bool Frame::FitImage(const CARTA::FittingRequest& fitting_request, CARTA::FittingResponse& fitting_response) {
+bool Frame::FitImage(const CARTA::FittingRequest& fitting_request, CARTA::FittingResponse& fitting_response, StokesRegion* stokes_region) {
     if (!_image_fitter) {
-        _image_fitter = std::make_unique<ImageFitter>(_width, _height);
+        _image_fitter = std::make_unique<ImageFitter>();
     }
 
     bool success = false;
+
     if (_image_fitter) {
-        FillImageCache();
         std::vector<CARTA::GaussianComponent> initial_values(
             fitting_request.initial_values().begin(), fitting_request.initial_values().end());
-        success = _image_fitter->FitImage(_image_cache.get(), initial_values, fitting_response);
+
+        if (stokes_region != nullptr) {
+            casacore::IPosition region_shape = GetRegionShape(*stokes_region);
+            spdlog::info("Creating region subimage data with shape {} x {}.", region_shape(0), region_shape(1));
+
+            std::vector<float> region_data;
+            if (!GetRegionData(*stokes_region, region_data)) {
+                spdlog::error("Failed to get data in the region!");
+                fitting_response.set_message("failed to get data");
+                fitting_response.set_success(false);
+                return false;
+            }
+
+            casacore::IPosition origin(2, 0, 0);
+            casacore::IPosition region_origin = stokes_region->image_region.asLCRegion().expand(origin);
+
+            success = _image_fitter->FitImage(
+                region_shape(0), region_shape(1), region_data.data(), initial_values, fitting_response, region_origin(0), region_origin(1));
+        } else {
+            FillImageCache();
+            success = _image_fitter->FitImage(_width, _height, _image_cache.get(), initial_values, fitting_response);
+        }
     }
 
     return success;
@@ -2211,8 +2187,9 @@ casacore::Slicer Frame::GetExportRegionSlicer(const CARTA::SaveFile& save_file_m
 bool Frame::GetStokesTypeIndex(const string& coordinate, int& stokes_index) {
     // Coordinate could be profile (x, y, z), stokes string (I, Q, U), or combination (Ix, Qy)
     bool is_stokes_string = StokesStringTypes.find(coordinate) != StokesStringTypes.end();
+    bool is_combination = (coordinate.size() > 1 && (coordinate.back() == 'x' || coordinate.back() == 'y' || coordinate.back() == 'z'));
 
-    if (coordinate.size() == 2 || coordinate.size() == 3 || is_stokes_string) {
+    if (is_combination || is_stokes_string) {
         bool stokes_ok(false);
 
         std::string stokes_string;
