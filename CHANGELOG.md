@@ -4,10 +4,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-rc.0]
+
+### Added
+* Added support for image fitting with field of view ([#150](https://github.com/CARTAvis/carta-backend/issues/150)).
+* List frequency and velocity in file info for single channel image ([#1152](https://github.com/CARTAvis/carta-backend/issues/1152)).
+
+### Changed
+* Enhanced image fitting performance by switching the solver from qr to cholesky ([#1114](https://github.com/CARTAvis/carta-backend/pull/1114)).
+* Made HTTP server return a different error code for disabled features ([#1115](https://github.com/CARTAvis/carta-backend/issues/1115)).
+* Removed Splatalogue interaction from backend codebase and removed dependency on libcurl ([#994](https://github.com/cartavis/carta-backend/issues/994)).
+* Use wrappers to construct protocol buffer messages where possible ([#960](https://github.com/CARTAvis/carta-backend/issues/960)).
+* Change the time zone in log messages from local to UTC ([#1151](https://github.com/CARTAvis/carta-backend/issues/1151)).
+* Refactor the timer for performance measurements ([#1180](https://github.com/CARTAvis/carta-backend/issues/1180)).
+
+### Fixed
+* Stopped calculating per-cube histogram unnecessarily when switching to a new Stokes value ([#1013](https://github.com/CARTAvis/carta-backend/issues/1013)).
+* Ensured that HTTP server returns error codes correctly ([#1011](https://github.com/CARTAvis/carta-backend/issues/1011)).
+* Fixed crash problems for compressed FITS files ([#999](https://github.com/CARTAvis/carta-backend/issues/999) and [#1014](https://github.com/CARTAvis/carta-backend/issues/1014)).
+* Fixed the incorrect STD for images with large pixel values ([#1069](https://github.com/CARTAvis/carta-backend/issues/1069)).
+* Fixed incorrect spectral profiles for computed stokes ([#1122](https://github.com/CARTAvis/carta-backend/issues/1122)). 
+* Fixed the problem of recognizing FITS gzip files from ALMA Science Archive ([#1130](https://github.com/CARTAvis/carta-backend/issues/1130)).
+* Fixed slow loading of FITS image with large number of HISTORY headers ([#1063](https://github.com/CARTAvis/carta-backend/issues/1063)).
+* Fixed the DS9 import bug with region properties ([#1129](https://github.com/CARTAvis/carta-backend/issues/1129)).
+* Fixed incorrect pixel number when fitting image with nan pixels ([#1128](https://github.com/CARTAvis/carta-backend/pull/1128)).
+* Fixed errors on loading images via LEL ([#1144](https://github.com/CARTAvis/carta-backend/issues/1144)).
+* Fixed the DS9 import bug with no header line ([#1064](https://github.com/CARTAvis/carta-backend/issues/1064)).
+* Fixed incorrect matched region pixel count ([#1108](https://github.com/CARTAvis/carta-backend/issues/1108)).
+* Fixed the getstat error on generated image ([#1148](https://github.com/CARTAvis/carta-backend/issues/1148)).
+* Fixed file info hang when a CASA image is locked ([#578](https://github.com/CARTAvis/carta-backend/pull/578)).
+* Fixed region export failure when no write permission ([#1133](https://github.com/CARTAvis/carta-backend/pull/1133)).
+* Fixed HTTP response codes when returning response to PUT requests ([#1157](https://github.com/CARTAvis/carta-backend/issues/1157)).
+* Fixed the problem of one-pixel position offset for DS9 regions projections ([#1138](https://github.com/CARTAvis/carta-backend/issues/1138)).
+* Fixed crash problems during moments ICD tests ([#1070](https://github.com/CARTAvis/carta-backend/issues/1070)).
+* Fixed response when importing region file fails by catching exception ([#1160](https://github.com/CARTAvis/carta-backend/issues/1160)).
+* Fixed the crash when trying to load an unsupported image file ([#1161](https://github.com/CARTAvis/carta-backend/issues/1161)).
+* Fixed including directories in region file list ([#1159](https://github.com/CARTAvis/carta-backend/issues/1159)).
+* Fixed issue where NaN data was read incorrectly from a compressed FITS .fz image ([#1143](https://github.com/CARTAvis/carta-backend/issues/1143)).
+
 ## [3.0.0-beta.3]
 
 ### Changed
-
 * Removed gRPC service and moved scripting interface to HTTP server ([#1022](https://github.com/CARTAvis/carta-backend/pull/1022)).
 * Added more fine-grained commandline flags to enable and disable functions of the HTTP server.
 * Optimised performance of image data cache ([#967](https://github.com/CARTAvis/carta-backend/issues/967)).
@@ -41,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed CRTF export bug for labelpos ([#1012](https://github.com/CARTAvis/carta-backend/issues/1012)).
 * Fixed DS9 import bug for region parameter with no unit ([#1101](https://github.com/CARTAvis/carta-backend/issues/1101)).
 * Fixed offset in center of offset axis of generated PV image ([#1038](https://github.com/CARTAvis/carta-backend/issues/1038)).
+* Fixed CARTA FITS image pixel mask for floating-point images.
 * Fixed various memory leaks, and several memory errors uncovered by address sanitization.
 
 ## [3.0.0-beta.2]

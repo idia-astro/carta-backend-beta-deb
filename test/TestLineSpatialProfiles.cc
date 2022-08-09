@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018, 2019, 2020, 2021 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -24,10 +24,7 @@ public:
         std::shared_ptr<casacore::CoordinateSystem> csys) {
         std::vector<CARTA::Point> control_points;
         for (auto i = 0; i < endpoints.size(); i += 2) {
-            CARTA::Point point;
-            point.set_x(endpoints[i]);
-            point.set_y(endpoints[i + 1]);
-            control_points.push_back(point);
+            control_points.push_back(Message::Point(endpoints[i], endpoints[i + 1]));
         }
 
         // Define RegionState for line region and set region (region_id updated)
