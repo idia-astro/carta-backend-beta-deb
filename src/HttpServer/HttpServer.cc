@@ -92,11 +92,21 @@ void HttpServer::HandleStaticRequest(Res* res, Req* req) {
     if (url.empty() || url == "/") {
         path /= "index.html";
     } else {
-        // Trim leading '/'
-        if (url[0] == '/') {
+        // Trim all leading '/'
+        while (url.size() && url[0] == '/') {
             url = url.substr(1);
         }
         path /= std::string(url);
+    }
+
+    std::error_code error_code;
+    auto relative_path = fs::relative(path, _http_root_folder, error_code).string();
+
+    // Prevent serving of any files outside the HTTP root folder
+    if (error_code || !relative_path.size() || relative_path.find("..") != std::string::npos) {
+        res->writeStatus(HTTP_403);
+        res->end();
+        return;
     }
 
     // Check if we can serve a gzip-compressed alternative
@@ -105,7 +115,6 @@ void HttpServer::HandleStaticRequest(Res* res, Req* req) {
     bool gzip_compressed = false;
     auto gzip_path = path;
     gzip_path += ".gz";
-    std::error_code error_code;
     if (accepts_gzip && fs::exists(gzip_path, error_code) && fs::is_regular_file(gzip_path, error_code)) {
         gzip_compressed = true;
         path = gzip_path;
@@ -116,6 +125,7 @@ void HttpServer::HandleStaticRequest(Res* res, Req* req) {
         std::ifstream file(path.string(), std::ios::binary | std::ios::ate);
         if (!file.good()) {
             res->writeStatus(HTTP_404);
+            res->end();
             return;
         }
         std::streamsize size = file.tellg();
