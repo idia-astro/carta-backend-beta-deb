@@ -47,21 +47,21 @@ endif ()
 # Needed by clang-tidy and other clang tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-FIND_PACKAGE(GSL REQUIRED)
-FIND_PACKAGE(ZFP CONFIG REQUIRED)
-FIND_PACKAGE(PkgConfig REQUIRED)
-
-FIND_PACKAGE(PUGIXML QUIET)
-if (PUGIXML_FOUND)
-    message(STATUS "Found pugixml using find_package")
+FIND_PACKAGE(GSL QUIET)
+if (GSL_FOUND)
+    message(STATUS "Found gsl using find_package")
 else ()
-        PKG_SEARCH_MODULE(PUGIXML REQUIRED pugixml)
-        if (PUGIXML_FOUND)
-        message(STATUS "Found pugixml using pkg-config")
+    if(EXISTS /opt/carta-gsl)
+        message(STATUS "Found carta-gsl for el7")
+        INCLUDE_DIRECTORIES(/opt/carta-gsl/include)
+        LINK_DIRECTORIES(/opt/carta-gsl/lib)
     else ()
-        message(FATAL_ERROR "Could not find pugixml")
+        message(FATAL_ERROR "Could not find gsl")
     endif ()
 endif()
+
+FIND_PACKAGE(ZFP CONFIG REQUIRED)
+FIND_PACKAGE(PkgConfig REQUIRED)
 
 FIND_PACKAGE(CFITSIO QUIET)
 if (CFITSIO_FOUND)
@@ -153,6 +153,13 @@ endif ()
 # Include uWebSockets headers and build the uSockets lib
 include_directories(${CMAKE_SOURCE_DIR}/third-party/include)
 install_uWebSockets()
+
+#pugixml
+SET(PUGIXML_COMPACT ON CACHE BOOL "" FORCE)
+add_subdirectory(third-party/pugixml)
+include_directories(${CMAKE_SOURCE_DIR}/third-party/pugixml/src)
+
+#spdlog
 add_subdirectory(third-party/spdlog)
 
 set(LINK_LIBS
@@ -190,13 +197,12 @@ set(SOURCE_FILES
         src/DataStream/Contouring.cc
         src/DataStream/Smoothing.cc
         src/DataStream/Tile.cc
+        src/DataStream/VectorField.cc
         src/FileList/FileExtInfoLoader.cc
         src/FileList/FileInfoLoader.cc
         src/FileList/FileListHandler.cc
         src/FileList/FitsHduList.cc
         src/Frame/Frame.cc
-        src/Frame/VectorFieldCalculator.cc
-        src/Frame/VectorFieldSettings.cc
         src/HttpServer/HttpServer.cc
         src/ImageData/CartaFitsImage.cc
         src/ImageData/CartaHdf5Image.cc
@@ -210,6 +216,8 @@ set(SOURCE_FILES
         src/ImageData/StokesFilesConnector.cc
         src/ImageGenerators/MomentGenerator.cc
         src/ImageGenerators/PvGenerator.cc
+        src/ImageGenerators/PvPreviewCube.cc
+        src/ImageGenerators/PvPreviewCut.cc
         src/ImageStats/Histogram.cc
         src/ImageStats/StatsCalculator.cc
         src/Logger/Logger.cc
@@ -218,6 +226,7 @@ set(SOURCE_FILES
         src/Main/WebBrowser.cc
         src/Region/CrtfImportExport.cc
         src/Region/Ds9ImportExport.cc
+        src/Region/LineBoxRegions.cc
         src/Region/Region.cc
         src/Region/RegionHandler.cc
         src/Region/RegionImportExport.cc
@@ -235,8 +244,8 @@ set(SOURCE_FILES
         src/Util/App.cc
         src/Util/Casacore.cc
         src/Util/File.cc
-        src/Util/Image.cc
         src/Util/Message.cc
+        src/Util/Stokes.cc
         src/Util/String.cc
         src/Util/Token.cc
         src/ImageFitter/ImageFitter.cc)
