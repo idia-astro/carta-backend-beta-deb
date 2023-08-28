@@ -79,7 +79,7 @@ public:
     bool OnOpenFile(int file_id, const string& name, std::shared_ptr<casacore::ImageInterface<casacore::Float>> image,
         CARTA::OpenFileAck* open_file_ack);
     void OnCloseFile(const CARTA::CloseFile& message);
-    void OnAddRequiredTiles(const CARTA::AddRequiredTiles& message, bool skip_data = false);
+    void OnAddRequiredTiles(const CARTA::AddRequiredTiles& message, int animation_id = 0, bool skip_data = false);
     void OnSetImageChannels(const CARTA::SetImageChannels& message);
     void OnSetCursor(const CARTA::SetCursor& message, uint32_t request_id);
     bool OnSetRegion(const CARTA::SetRegion& message, uint32_t request_id, bool silent = false);
@@ -140,7 +140,7 @@ public:
     }
     void BuildAnimationObject(CARTA::StartAnimation& msg, uint32_t request_id);
     bool ExecuteAnimationFrame();
-    void ExecuteAnimationFrameInner();
+    void ExecuteAnimationFrameInner(int animation_id);
     void StopAnimation(int file_id, const ::CARTA::AnimationFrame& frame);
     void HandleAnimationFlowControlEvt(CARTA::AnimationFlowControl& message);
     int CurrentFlowWindowSize() {
@@ -242,10 +242,10 @@ public:
 protected:
     // File info for file list (extended info for each hdu_name)
     bool FillExtendedFileInfo(std::map<std::string, CARTA::FileInfoExtended>& hdu_info_map, CARTA::FileInfo& file_info,
-        const std::string& folder, const std::string& filename, const std::string& hdu, std::string& message);
+        const std::string& folder, const std::string& filename, const std::string& hdu, bool support_aips_beam, std::string& message);
     // File info for open file
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, CARTA::FileInfo& file_info, const std::string& folder,
-        const std::string& filename, std::string& hdu_name, std::string& message, std::string& fullname);
+        const std::string& filename, std::string& hdu_name, bool support_aips_beam, std::string& message, std::string& fullname);
     bool FillFileInfo(
         CARTA::FileInfo& file_info, const std::string& folder, const std::string& filename, std::string& fullname, std::string& message);
 
@@ -264,7 +264,7 @@ protected:
     bool SendSpatialProfileData(int file_id, int region_id);
     void SendSpatialProfileDataByFileId(int file_id);
     void SendSpatialProfileDataByRegionId(int region_id);
-    bool SendRegionHistogramData(int file_id, int region_id);
+    bool SendRegionHistogramData(int file_id, int region_id, bool channel_changed = false);
     bool SendRegionStatsData(int file_id, int region_id);
 
     void UpdateImageData(int file_id, bool send_image_histogram, bool z_changed, bool stokes_changed);
@@ -329,6 +329,7 @@ protected:
     SessionContext _animation_context;
 
     std::atomic<int> _ref_count;
+    int _sync_id;
     int _animation_id;
     bool _connected;
     static volatile int _num_sessions;
