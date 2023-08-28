@@ -24,8 +24,8 @@ CARTA::CloseFile Message::CloseFile(int32_t file_id) {
     return close_file;
 }
 
-CARTA::OpenFile Message::OpenFile(
-    std::string directory, std::string file, std::string hdu, int32_t file_id, CARTA::RenderMode render_mode, bool lel_expr) {
+CARTA::OpenFile Message::OpenFile(std::string directory, std::string file, bool lel_expr, std::string hdu, int32_t file_id,
+    bool support_aips_beam, CARTA::RenderMode render_mode) {
     CARTA::OpenFile open_file;
     open_file.set_directory(directory);
     open_file.set_file(file);
@@ -33,6 +33,7 @@ CARTA::OpenFile Message::OpenFile(
     open_file.set_file_id(file_id);
     open_file.set_render_mode(render_mode);
     open_file.set_lel_expr(lel_expr);
+    open_file.set_support_aips_beam(support_aips_beam);
     return open_file;
 }
 
@@ -512,12 +513,15 @@ CARTA::SpatialProfileData Message::SpatialProfileData(int32_t x, int32_t y, int3
     return message;
 }
 
-CARTA::RasterTileSync Message::RasterTileSync(int32_t file_id, int32_t channel, int32_t stokes, int32_t animation_id, bool end_sync) {
+CARTA::RasterTileSync Message::RasterTileSync(
+    int32_t file_id, int32_t channel, int32_t stokes, int32_t sync_id, int32_t animation_id, int32_t tile_count, bool end_sync) {
     CARTA::RasterTileSync message;
     message.set_file_id(file_id);
     message.set_channel(channel);
     message.set_stokes(stokes);
+    message.set_sync_id(sync_id);
     message.set_animation_id(animation_id);
+    message.set_tile_count(tile_count);
     message.set_end_sync(end_sync);
     return message;
 }
@@ -637,9 +641,10 @@ CARTA::FileInfo Message::FileInfo(const std::string& name, CARTA::FileType type,
     return message;
 }
 
-CARTA::RasterTileData Message::RasterTileData(int32_t file_id, int32_t animation_id) {
+CARTA::RasterTileData Message::RasterTileData(int32_t file_id, int32_t sync_id, int32_t animation_id) {
     CARTA::RasterTileData message;
     message.set_file_id(file_id);
+    message.set_sync_id(sync_id);
     message.set_animation_id(animation_id);
     return message;
 }
