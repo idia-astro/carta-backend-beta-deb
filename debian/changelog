@@ -1,3 +1,9 @@
+carta-backend-beta (4.0+2023.8.28-1~focal1) focal; urgency=medium
+
+  * Latest development version built for internal testing.
+
+ -- Adrianna Pińska <adrianna.pinska@gmail.com>  Mon, 28 Aug 2023 15:08:41 +0200
+
 carta-backend-beta (4.0+2023.5.4-1~focal1) focal; urgency=medium
 
   * Bumped version to 4.0.0-beta.1.
