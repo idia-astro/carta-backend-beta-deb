@@ -23,3 +23,5 @@ docs/html
 # Dependency download locations
 third-party/uSockets/
 third-party/uWebSockets/
+
+debian/files
