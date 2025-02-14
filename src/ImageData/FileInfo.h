@@ -1,11 +1,11 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND_FILEINFO_H
-#define CARTA_BACKEND_FILEINFO_H
+#ifndef CARTA_SRC_IMAGEDATA_FILEINFO_H_
+#define CARTA_SRC_IMAGEDATA_FILEINFO_H_
 
 #include <map>
 #include <vector>
@@ -14,7 +14,6 @@
 #include <casacore/images/Images/SubImage.h>
 
 #include <carta-protobuf/defs.pb.h>
-//#include <carta-protobuf/enums.pb.h>
 
 namespace carta {
 namespace FileInfo {
@@ -122,20 +121,7 @@ inline casacore::uInt GetFitsHdu(const std::string& hdu) {
     return hdu_num;
 }
 
-// convert between CARTA::PolarizationType values and FITS standard stokes values
-static bool ConvertFitsStokesValue(const int& in_stokes_value, int& out_stokes_value) {
-    if (in_stokes_value >= 1 && in_stokes_value <= 4) {
-        out_stokes_value = in_stokes_value;
-        return true;
-    } else if ((in_stokes_value >= 4 && in_stokes_value <= 12) || (in_stokes_value <= -1 && in_stokes_value >= -8)) {
-        // convert between [5, 6, ..., 12] and [-1, -2, ..., -8]
-        out_stokes_value = -in_stokes_value + 4;
-        return true;
-    }
-    return false;
-}
-
 } // namespace FileInfo
 } // namespace carta
 
-#endif // CARTA_BACKEND_FILEINFO_H
+#endif // CARTA_SRC_IMAGEDATA_FILEINFO_H_

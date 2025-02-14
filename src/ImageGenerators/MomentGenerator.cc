@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -28,20 +28,20 @@ bool MomentGenerator::CalculateMoments(int file_id, const casacore::ImageRegion&
     _success = false;
     _cancel = false;
 
-    // Set moment axis
+    // Save request settings
     SetMomentAxis(moment_request);
-
-    // Set pixel range
     SetPixelRange(moment_request);
-
-    // Set moment types
     SetMomentTypes(moment_request);
+    SetRestFrequency(moment_request);
 
-    // Reset an ImageMoments
-    ResetImageMoments(image_region);
+    // Save image rest frequency for restore
+    double image_rest_freq = _image->coordinates().spectralCoordinate().restFrequency(); // Hz
 
     // Calculate moments
     try {
+        // Reset an ImageMoments rest frequency and subimage
+        ResetImageMoments(image_region);
+
         // Start the timer
         _start_time = std::chrono::high_resolution_clock::now();
 
@@ -75,17 +75,13 @@ bool MomentGenerator::CalculateMoments(int file_id, const casacore::ImageRegion&
                             out_file_name += std::to_string(name_index);
                         }
 
-                        // Set a temp moment file Id.
-                        // With each name index, advance by number of moment types to avoid duplicates.
-                        int moment_file_id = (file_id + 1) * MOMENT_ID_MULTIPLIER + (name_index * _moment_map.size()) + moment_type;
-
                         // Fill results
                         std::shared_ptr<casacore::ImageInterface<casacore::Float>> moment_image =
                             dynamic_pointer_cast<casacore::ImageInterface<casacore::Float>>(result_images[i]);
 
                         // Add moment requests info to an image header as the HISTORY key
                         moment_image->appendLog(_logger);
-                        collapse_results.push_back(GeneratedImage(moment_file_id, out_file_name, moment_image));
+                        collapse_results.push_back(GeneratedImage(out_file_name, moment_image));
                     }
                     _success = true;
                 } catch (const AipsError& x) {
@@ -94,8 +90,11 @@ bool MomentGenerator::CalculateMoments(int file_id, const casacore::ImageRegion&
             }
         }
     } catch (AipsError& error) {
-        _error_msg = error.getLastMessage();
+        _error_msg = error.getMesg();
     }
+
+    // Restore original rest frequency
+    SetImageRestFrequency(image_rest_freq);
 
     // Set is the moment calculation successful or not
     moment_response.set_success(IsSuccess());
@@ -185,7 +184,14 @@ void MomentGenerator::SetPixelRange(const CARTA::MomentRequest& moment_request) 
     }
 }
 
+void MomentGenerator::SetRestFrequency(const CARTA::MomentRequest& moment_request) {
+    _rest_frequency = moment_request.rest_freq(); // Hz
+}
+
 void MomentGenerator::ResetImageMoments(const casacore::ImageRegion& image_region) {
+    // Set the requested rest frequency in the image spectral coordinate
+    SetImageRestFrequency(_rest_frequency);
+
     // Reset the sub-image
     _sub_image.reset(new casacore::SubImage<casacore::Float>(*_image, image_region));
 
@@ -194,6 +200,19 @@ void MomentGenerator::ResetImageMoments(const casacore::ImageRegion& image_regio
 
     // Make an ImageMoments object and overwrite the output file if it already exists
     _image_moments.reset(new IM(casacore::SubImage<casacore::Float>(*_sub_image), os, this, true));
+}
+
+void MomentGenerator::SetImageRestFrequency(double rest_frequency) {
+    auto csys = _image->coordinates();
+    if (rest_frequency != csys.spectralCoordinate().restFrequency()) {
+        casacore::String error;
+        casacore::Quantity new_rest_freq(rest_frequency, "Hz");
+        if (csys.setRestFrequency(error, new_rest_freq)) {
+            _image->setCoordinateInfo(csys);
+        } else {
+            throw(casacore::AipsError(error));
+        }
+    }
 }
 
 int MomentGenerator::GetMomentMode(CARTA::Moment moment) {

@@ -1,13 +1,13 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
 //# FileExtInfoLoader.h: load FileInfoExtended fields for all supported file types
 
-#ifndef CARTA_BACKEND__FILELIST_FILEEXTINFOLOADER_H_
-#define CARTA_BACKEND__FILELIST_FILEEXTINFOLOADER_H_
+#ifndef CARTA_SRC_FILELIST_FILEEXTINFOLOADER_H_
+#define CARTA_SRC_FILELIST_FILEEXTINFOLOADER_H_
 
 #include <map>
 #include <string>
@@ -50,15 +50,14 @@ private:
 
     // Computed entries
     void AddDataTypeEntry(CARTA::FileInfoExtended& extended_info, casacore::DataType data_type, casacore::DataType equivalent_type);
-    void AddShapeEntries(CARTA::FileInfoExtended& extended_info, const casacore::IPosition& shape, const std::vector<int>& spatial_axes,
-        int spectral_axis, int stokes_axis, const std::vector<int>& render_axes, int depth_axis,
+    void AddShapeEntries(CARTA::FileInfoExtended& extended_info, const casacore::IPosition& shape, const AxesInfo& axes,
         casacore::Vector<casacore::String>& axes_names);
     void AddInitialComputedEntries(const std::string& hdu, CARTA::FileInfoExtended& extended_info, const std::string& filename,
-        const std::vector<int>& render_axes, CompressedFits* compressed_fits = nullptr);
-    void AddComputedEntries(CARTA::FileInfoExtended& extended_info, casacore::ImageInterface<float>* image,
-        const std::vector<int>& display_axes, int spectral_axis, int stokes_axis, bool use_image_for_entries, bool is_history_beam);
-    void AddComputedEntriesFromHeaders(CARTA::FileInfoExtended& extended_info, const std::vector<int>& display_axes, int spectral_axis,
-        int stokes_axis, CompressedFits* compressed_fits = nullptr);
+        AxesInfo& axes, CompressedFits* compressed_fits = nullptr);
+    void AddComputedEntries(CARTA::FileInfoExtended& extended_info, casacore::ImageInterface<float>* image, const AxesInfo& axes,
+        bool use_image_for_entries, bool is_history_beam);
+    void AddComputedEntriesFromHeaders(
+        CARTA::FileInfoExtended& extended_info, const AxesInfo& axes, CompressedFits* compressed_fits = nullptr);
     void AddBeamEntry(CARTA::FileInfoExtended& extended_info, const casacore::ImageBeamSet& beam_set, bool is_history_beam);
     void AddCoordRanges(
         CARTA::FileInfoExtended& extended_info, const casacore::CoordinateSystem& coord_system, const casacore::IPosition& image_shape);
@@ -79,4 +78,4 @@ private:
 
 } // namespace carta
 
-#endif // CARTA_BACKEND__FILELIST_FILEINFOLOADER_H_
+#endif // CARTA_SRC_FILELIST_FILEEXTINFOLOADER_H_

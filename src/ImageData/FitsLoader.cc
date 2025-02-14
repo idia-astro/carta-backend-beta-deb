@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -19,7 +19,8 @@
 
 namespace carta {
 
-FitsLoader::FitsLoader(const std::string& filename, bool is_gz) : FileLoader(filename, "", is_gz) {}
+FitsLoader::FitsLoader(const std::string& filename, bool is_gz, bool is_http)
+    : FileLoader(filename, "", is_gz, is_http), _is_http(is_http) {}
 
 FitsLoader::~FitsLoader() {
     // Remove decompressed fits.gz file
@@ -34,7 +35,7 @@ void FitsLoader::AllocateImage(const std::string& hdu) {
     // Open image file as a casacore::ImageInterface<float>
 
     // Convert string to FITS hdu number
-    casacore::uInt hdu_num(FileInfo::GetFitsHdu(hdu));
+    casacore::uInt hdu_num(_is_http ? 0 : FileInfo::GetFitsHdu(hdu));
 
     if (!_image || (hdu_num != _hdu_num)) {
         bool gz_mem_ok(true);
@@ -64,15 +65,21 @@ void FitsLoader::AllocateImage(const std::string& hdu) {
 
         // Default is casacore::FITSImage; if fails, try CartaFitsImage
         bool use_casacore_fits(true);
-        auto num_headers = GetNumHeaders(_filename, hdu_num);
 
-        if (num_headers == 0) {
-            throw(casacore::AipsError("Error reading FITS file."));
-        }
-
-        if (num_headers > 2000) {
-            // casacore::FITSImage parses HISTORY
+        if (_is_http) {
             use_casacore_fits = false;
+        } else {
+            std::string error;
+            auto num_headers = GetNumImageHeaders(_filename, hdu_num, error);
+
+            if (num_headers == 0) {
+                throw(casacore::AipsError(error));
+            }
+
+            if (num_headers > 2000) {
+                // casacore::FITSImage parses HISTORY
+                use_casacore_fits = false;
+            }
         }
 
         try {
@@ -86,6 +93,8 @@ void FitsLoader::AllocateImage(const std::string& hdu) {
                     // use casacore for unzipped FITS file
                     _image.reset(new casacore::FITSImage(_unzip_file, 0, hdu_num));
                 }
+            } else if (_is_http) {
+                _image.reset(new CartaFitsImage(_filename, hdu_num, true));
             } else if (use_casacore_fits) {
                 if (Is64BitBeamsTable(_filename)) {
                     use_casacore_fits = false;
@@ -106,7 +115,9 @@ void FitsLoader::AllocateImage(const std::string& hdu) {
                     spdlog::error(err.getMesg());
                 }
             } else {
-                spdlog::error(err.getMesg());
+                auto error = err.getMesg();
+                spdlog::error(error);
+                throw(casacore::AipsError(error));
             }
         }
 
@@ -135,8 +146,8 @@ void FitsLoader::AllocateImage(const std::string& hdu) {
     }
 }
 
-int FitsLoader::GetNumHeaders(const std::string& filename, int hdu) {
-    // Return number of FITS headers, 0 if error.
+int FitsLoader::GetNumImageHeaders(const std::string& filename, int hdu, std::string& error) {
+    // Return number of FITS headers if image hdu, 0 if error.
     int num_headers(0);
 
     // Open file read-only
@@ -144,13 +155,29 @@ int FitsLoader::GetNumHeaders(const std::string& filename, int hdu) {
     int status(0);
     fits_open_file(&fptr, filename.c_str(), 0, &status);
     if (status) {
+        error = "Error reading FITS file.";
         return num_headers;
     }
 
-    // Advance to hdu (FITS hdu is 1-based)
-    int* hdutype(nullptr);
-    fits_movabs_hdu(fptr, hdu + 1, hdutype, &status);
+    // Advance to hdu (FITS hdu is 1-based) and check if image
+    int hdutype(-1);
+    fits_movabs_hdu(fptr, hdu + 1, &hdutype, &status);
     if (status) {
+        error = "Cannot advance to requested HDU.";
+        return num_headers;
+    }
+    if (hdutype != IMAGE_HDU) {
+        error = "HDU is not an image.";
+        return num_headers;
+    }
+
+    // Check if image exists in HDU
+    std::string key("NAXIS");
+    char* comment(nullptr); // unused
+    int naxis(0);
+    fits_read_key(fptr, TINT, key.c_str(), &naxis, comment, &status);
+    if (naxis == 0) {
+        error = "HDU image is empty.";
         return num_headers;
     }
 
@@ -163,7 +190,8 @@ int FitsLoader::GetNumHeaders(const std::string& filename, int hdu) {
 void FitsLoader::ResetImageBeam(unsigned int hdu_num) {
     // Remove restoring beam not if not in header entries.
     // If supporting AIPS beam, use last beam from history instead.
-    if (!_image) {
+    // Remote files can't have restoring beams
+    if (!_image || _is_http) {
         return;
     }
 

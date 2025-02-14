@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -100,7 +100,7 @@ CARTA::SetHistogramRequirements Message::SetHistogramRequirements(int32_t file_i
 }
 
 CARTA::AddRequiredTiles Message::AddRequiredTiles(
-    int32_t file_id, CARTA::CompressionType compression_type, float compression_quality, const std::vector<float>& tiles) {
+    int32_t file_id, CARTA::CompressionType compression_type, float compression_quality, const std::vector<int32_t>& tiles) {
     CARTA::AddRequiredTiles add_required_tiles;
     add_required_tiles.set_file_id(file_id);
     add_required_tiles.set_compression_type(compression_type);
@@ -440,6 +440,13 @@ CARTA::ScriptingRequest Message::ScriptingRequest(uint32_t scripting_request_id,
     return message;
 }
 
+CARTA::ChannelMapFlowControl Message::ChannelMapFlowControl(int32_t file_id, int32_t received_channel) {
+    CARTA::ChannelMapFlowControl message;
+    message.set_file_id(file_id);
+    message.set_received_channel(received_channel);
+    return message;
+}
+
 CARTA::EventType Message::EventType(std::vector<char>& message) {
     carta::EventHeader head = *reinterpret_cast<const carta::EventHeader*>(message.data());
     return static_cast<CARTA::EventType>(head.type);
@@ -690,6 +697,23 @@ CARTA::ListProgress Message::ListProgress(
     message.set_total_count(total_count);
     message.set_checked_count(checked_count);
     message.set_percentage(percentage);
+    return message;
+}
+CARTA::RemoteFileRequest Message::RemoteFileRequest(int32_t file_id, const string& hips, const string& wcs, int32_t width, int32_t height,
+    const string& projection, float fov, float ra, float dec, const string& coordsys, float rotation_angle, const string& object) {
+    CARTA::RemoteFileRequest message;
+    message.set_file_id(file_id);
+    message.set_hips(hips);
+    message.set_wcs(wcs);
+    message.set_width(width);
+    message.set_height(height);
+    message.set_projection(projection);
+    message.set_fov(fov);
+    message.set_ra(ra);
+    message.set_dec(dec);
+    message.set_coordsys(coordsys);
+    message.set_rotation_angle(rotation_angle);
+    message.set_object(object);
     return message;
 }
 

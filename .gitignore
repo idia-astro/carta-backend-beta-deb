@@ -20,4 +20,6 @@ coverage/
 # Doxygen
 docs/html
 
-debian/files
+# Dependency download locations
+third-party/uSockets/
+third-party/uWebSockets/

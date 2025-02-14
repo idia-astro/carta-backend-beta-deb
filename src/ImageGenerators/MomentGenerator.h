@@ -1,11 +1,11 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND_MOMENT_MOMENTGENERATOR_H_
-#define CARTA_BACKEND_MOMENT_MOMENTGENERATOR_H_
+#ifndef CARTA_SRC_IMAGEGENERATORS_MOMENTGENERATOR_H_
+#define CARTA_SRC_IMAGEGENERATORS_MOMENTGENERATOR_H_
 
 #include <carta-protobuf/moment_request.pb.h>
 #include <carta-protobuf/stop_moment_calc.pb.h>
@@ -51,7 +51,9 @@ private:
     void SetMomentAxis(const CARTA::MomentRequest& moment_request);
     void SetMomentTypes(const CARTA::MomentRequest& moment_request);
     void SetPixelRange(const CARTA::MomentRequest& moment_request);
+    void SetRestFrequency(const CARTA::MomentRequest& moment_request);
     void ResetImageMoments(const casacore::ImageRegion& image_region);
+    void SetImageRestFrequency(double rest_frequency);
     int GetMomentMode(CARTA::Moment moment);
     casacore::String GetMomentSuffix(casacore::Int moment);
     casacore::String GetInputFileName();
@@ -72,6 +74,7 @@ private:
     int _axis;                                // Moment axis
     casacore::Vector<float> _include_pix;
     casacore::Vector<float> _exclude_pix;
+    double _rest_frequency; // Hz
     casacore::String _error_msg;
     bool _success;
     bool _cancel;
@@ -89,4 +92,4 @@ private:
 
 } // namespace carta
 
-#endif // CARTA_BACKEND_MOMENT_MOMENTGENERATOR_H_
+#endif // CARTA_SRC_IMAGEGENERATORS_MOMENTGENERATOR_H_

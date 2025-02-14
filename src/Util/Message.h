@@ -1,13 +1,14 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND__UTIL_MESSAGE_H_
-#define CARTA_BACKEND__UTIL_MESSAGE_H_
+#ifndef CARTA_SRC_UTIL_MESSAGE_H_
+#define CARTA_SRC_UTIL_MESSAGE_H_
 
 #include <carta-protobuf/animation.pb.h>
+#include <carta-protobuf/channel_map.pb.h>
 #include <carta-protobuf/close_file.pb.h>
 #include <carta-protobuf/contour_image.pb.h>
 #include <carta-protobuf/defs.pb.h>
@@ -26,6 +27,7 @@
 #include <carta-protobuf/region_requirements.pb.h>
 #include <carta-protobuf/region_stats.pb.h>
 #include <carta-protobuf/register_viewer.pb.h>
+#include <carta-protobuf/remote_file_request.pb.h>
 #include <carta-protobuf/resume_session.pb.h>
 #include <carta-protobuf/save_file.pb.h>
 #include <carta-protobuf/scripting.pb.h>
@@ -46,7 +48,8 @@
 #include "ImageStats/Histogram.h"
 
 namespace carta {
-const uint16_t ICD_VERSION = 28;
+const uint16_t ICD_VERSION = 30;
+
 struct EventHeader {
     uint16_t type;
     uint16_t icd_version;
@@ -73,7 +76,7 @@ public:
     static CARTA::SetHistogramRequirements SetHistogramRequirements(
         int32_t file_id, int32_t region_id, int32_t channel = CURRENT_Z, int32_t num_bins = AUTO_BIN_SIZE);
     static CARTA::AddRequiredTiles AddRequiredTiles(
-        int32_t file_id, CARTA::CompressionType compression_type, float compression_quality, const std::vector<float>& tiles);
+        int32_t file_id, CARTA::CompressionType compression_type, float compression_quality, const std::vector<int32_t>& tiles);
     static CARTA::Point Point(float x, float y);
     static CARTA::Point Point(const casacore::Vector<casacore::Double>& input, int x_index = 0, int y_index = 1);
     static CARTA::Point Point(const std::vector<casacore::Quantity>& input, int x_index = 0, int y_index = 1);
@@ -114,6 +117,7 @@ public:
         const CARTA::DoublePoint& center, double amp, const CARTA::DoublePoint& fwhm, double pa);
     static CARTA::ScriptingRequest ScriptingRequest(uint32_t scripting_request_id, const std::string& target, const std::string& action,
         const std::string& parameters, bool async, const std::string& return_path);
+    static CARTA::ChannelMapFlowControl ChannelMapFlowControl(int32_t file_id, int32_t received_channel);
 
     // Response messages
     static CARTA::SpectralProfileData SpectralProfileData(int32_t file_id, int32_t region_id, int32_t stokes, float progress,
@@ -133,6 +137,9 @@ public:
     static CARTA::PvRequest PvRequest(
         int32_t file_id, int32_t region_id, int32_t width, int z_min = -1, int32_t z_max = -1, bool reverse = false, bool keep = false);
     static CARTA::PvProgress PvProgress(int32_t file_id, float progress, int32_t preview_id = 0);
+    static CARTA::RemoteFileRequest RemoteFileRequest(int32_t file_id, const std::string& hips, const std::string& wcs, int32_t width,
+        int32_t height, const std::string& projection, float fov, float ra, float dec, const std::string& coordsys, float rotation_angle,
+        const std::string& object);
     static CARTA::FittingProgress FittingProgress(int32_t file_id, float progress);
     static CARTA::RegionHistogramData RegionHistogramData(
         int32_t file_id, int32_t region_id, int32_t channel, int32_t stokes, float progress, const carta::HistogramConfig& hist_config);
@@ -165,4 +172,4 @@ void FillStatistics(CARTA::RegionStatsData& stats_data, const std::vector<CARTA:
 
 #include "Message.tcc"
 
-#endif // CARTA_BACKEND__UTIL_MESSAGE_H_
+#endif // CARTA_SRC_UTIL_MESSAGE_H_

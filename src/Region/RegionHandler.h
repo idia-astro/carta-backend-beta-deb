@@ -1,13 +1,13 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
 // RegionHandler.h: class for handling requirements and data streams for regions
 
-#ifndef CARTA_BACKEND_REGION_REGIONHANDLER_H_
-#define CARTA_BACKEND_REGION_REGIONHANDLER_H_
+#ifndef CARTA_SRC_REGION_REGIONHANDLER_H_
+#define CARTA_SRC_REGION_REGIONHANDLER_H_
 
 #include <vector>
 
@@ -35,7 +35,6 @@ public:
 
     // Regions
     bool SetRegion(int& region_id, RegionState& region_state, std::shared_ptr<casacore::CoordinateSystem> csys);
-    bool RegionChanged(int region_id);
     void RemoveRegion(int region_id);
     std::shared_ptr<Region> GetRegion(int region_id);
 
@@ -43,7 +42,7 @@ public:
     void ImportRegion(int file_id, std::shared_ptr<Frame> frame, CARTA::FileType region_file_type, const std::string& region_file,
         bool file_is_filename, CARTA::ImportRegionAck& import_ack);
     void ExportRegion(int file_id, std::shared_ptr<Frame> frame, CARTA::FileType region_file_type, CARTA::CoordinateType coord_type,
-        std::map<int, CARTA::RegionStyle>& region_styles, std::string& filename, CARTA::ExportRegionAck& export_ack);
+        std::map<int, CARTA::RegionStyle>& region_styles, std::string& filename, bool overwrite, CARTA::ExportRegionAck& export_ack);
 
     // Frames
     void RemoveFrame(int file_id);
@@ -219,4 +218,4 @@ private:
 
 } // namespace carta
 
-#endif // CARTA_BACKEND_REGION_REGIONHANDLER_H_
+#endif // CARTA_SRC_REGION_REGIONHANDLER_H_

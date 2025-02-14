@@ -1,13 +1,13 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
 // # Session.h: representation of a client connected to a server; processes requests from frontend
 
-#ifndef CARTA_BACKEND__SESSION_H_
-#define CARTA_BACKEND__SESSION_H_
+#ifndef CARTA_SRC_SESSION_SESSION_H_
+#define CARTA_SRC_SESSION_SESSION_H_
 
 #include <atomic>
 #include <cstdint>
@@ -24,16 +24,18 @@
 #include <casacore/casa/aips.h>
 
 #include "AnimationObject.h"
+#include "Cache/LoaderCache.h"
+#include "ChannelMapSettings.h"
 #include "CursorSettings.h"
 #include "FileList/FileListHandler.h"
 #include "Frame/Frame.h"
 #include "ImageData/StokesFilesConnector.h"
+#include "Main/ProgramSettings.h"
 #include "Region/RegionHandler.h"
 #include "SessionContext.h"
+#include "Table/TableController.h"
 #include "ThreadingManager/Concurrency.h"
 #include "Util/Message.h"
-
-#include "Table/TableController.h"
 
 #define HISTOGRAM_CANCEL -1.0
 #define UPDATE_HISTOGRAM_PROGRESS_PER_SECONDS 2.0
@@ -49,26 +51,10 @@ struct PerSocketData {
     string address;
 };
 
-// Cache of loaders for reading images from disk.
-class LoaderCache {
-public:
-    LoaderCache(int capacity);
-    std::shared_ptr<FileLoader> Get(const std::string& filename, const std::string& directory = "");
-    void Remove(const std::string& filename, const std::string& directory = "");
-
-private:
-    std::string GetKey(const std::string& filename, const std::string& directory);
-    int _capacity;
-    std::unordered_map<std::string, std::shared_ptr<FileLoader>> _map;
-    std::list<std::string> _queue;
-    std::mutex _loader_cache_mutex;
-};
-
 class Session {
 public:
-    Session(uWS::WebSocket<false, true, PerSocketData>* ws, uWS::Loop* loop, uint32_t id, std::string address, std::string top_level_folder,
-        std::string starting_folder, std::shared_ptr<FileListHandler> file_list_handler, bool read_only_mode = false,
-        bool enable_scripting = false);
+    Session(uWS::WebSocket<false, true, PerSocketData>* ws, uWS::Loop* loop, uint32_t id, std::string address,
+        std::shared_ptr<FileListHandler> file_list_handler);
     ~Session();
 
     // CARTA ICD
@@ -79,7 +65,7 @@ public:
     bool OnOpenFile(int file_id, const string& name, std::shared_ptr<casacore::ImageInterface<casacore::Float>> image,
         CARTA::OpenFileAck* open_file_ack);
     void OnCloseFile(const CARTA::CloseFile& message);
-    void OnAddRequiredTiles(const CARTA::AddRequiredTiles& message, int animation_id = 0, bool skip_data = false);
+    void OnAddRequiredTiles(const CARTA::AddRequiredTiles& message, int channel = CURRENT_Z, int animation_id = 0, bool skip_data = false);
     void OnSetImageChannels(const CARTA::SetImageChannels& message);
     void OnSetCursor(const CARTA::SetCursor& message, uint32_t request_id);
     bool OnSetRegion(const CARTA::SetRegion& message, uint32_t request_id, bool silent = false);
@@ -110,19 +96,16 @@ public:
     void OnSetVectorOverlayParameters(const CARTA::SetVectorOverlayParameters& message);
     void OnStopPvPreview(const CARTA::StopPvPreview& stop_pv_preview);
     void OnClosePvPreview(const CARTA::ClosePvPreview& close_pv_preview);
+    void OnRemoteFileRequest(const CARTA::RemoteFileRequest& message, uint32_t request_id);
 
-    void AddToSetChannelQueue(CARTA::SetImageChannels message, uint32_t request_id) {
-        std::pair<CARTA::SetImageChannels, uint32_t> rp;
-        // Empty current queue first.
-        while (_set_channel_queues[message.file_id()].try_pop(rp)) {
-        }
-        _set_channel_queues[message.file_id()].push(std::make_pair(message, request_id));
-    }
+    void AddToSetChannelQueue(CARTA::SetImageChannels message, uint32_t request_id);
 
     // Task handling
     void ExecuteSetChannelEvt(std::pair<CARTA::SetImageChannels, uint32_t> request) {
         OnSetImageChannels(request.first);
     }
+    void HandleChannelMapFlowControlEvt(CARTA::ChannelMapFlowControl& message);
+
     void CancelSetHistRequirements() {
         _histogram_context.cancel_group_execution();
     }
@@ -151,22 +134,22 @@ public:
     void AddCursorSetting(CARTA::SetCursor message, uint32_t request_id) {
         _cursor_settings.AddCursorSetting(message, request_id);
     }
-    void ImageChannelLock(int fileId) {
-        _image_channel_mutexes[fileId].lock();
+    void ImageChannelLock(int file_id) {
+        _image_channel_mutexes[file_id].lock();
     }
-    void ImageChannelUnlock(int fileId) {
-        _image_channel_mutexes[fileId].unlock();
+    void ImageChannelUnlock(int file_id) {
+        _image_channel_mutexes[file_id].unlock();
     }
-    bool ImageChannelTaskTestAndSet(int fileId) {
-        if (_image_channel_task_active[fileId]) {
+    bool ImageChannelTaskTestAndSet(int file_id) {
+        if (_image_channel_task_active[file_id]) {
             return true;
         } else {
-            _image_channel_task_active[fileId] = true;
+            _image_channel_task_active[file_id] = true;
             return false;
         }
     }
-    void ImageChannelTaskSetIdle(int fileId) {
-        _image_channel_task_active[fileId] = false;
+    void ImageChannelTaskSetIdle(int file_id) {
+        _image_channel_task_active[file_id] = false;
     }
     int IncreaseRefCount() {
         return ++_ref_count;
@@ -195,10 +178,8 @@ public:
         return _animation_object && !_animation_object->_stop_called;
     }
     int CalculateAnimationFlowWindow();
-    static void SetExitTimeout(int secs) {
-        _exit_after_num_seconds = secs;
-        _exit_when_all_sessions_closed = true;
-    }
+
+    static void SetExitTimeout(int secs);
     static void SetInitExitTimeout(int secs);
 
     static void SetControllerDeploymentFlag(bool controller_deployment) {
@@ -257,6 +238,11 @@ protected:
     bool FillExtendedFileInfo(CARTA::FileInfoExtended& extended_info, std::shared_ptr<casacore::ImageInterface<float>> image,
         const std::string& filename, std::string& message, std::shared_ptr<FileLoader>& image_loader);
 
+    // Next unused file id for generated images
+    inline int GetNextFileId() {
+        return _last_file_id + 1;
+    }
+
     // Delete Frame(s)
     void DeleteFrame(int file_id);
 
@@ -264,7 +250,7 @@ protected:
     bool CalculateCubeHistogram(int file_id, CARTA::RegionHistogramData& cube_histogram_message);
 
     // Send data streams
-    bool SendContourData(int file_id, bool ignore_empty = true);
+    bool SendContourData(int file_id, bool ignore_empty = true, int channel = CURRENT_Z);
     bool SendSpatialProfileData(int file_id, int region_id);
     void SendSpatialProfileDataByFileId(int file_id);
     void SendSpatialProfileDataByRegionId(int region_id);
@@ -281,16 +267,17 @@ protected:
         int file_id, CARTA::EventType event_type, u_int32_t event_id, google::protobuf::MessageLite& message, bool compress = true);
     void SendLogEvent(const std::string& message, std::vector<std::string> tags, CARTA::ErrorSeverity severity);
 
+    // Channel map cancellation
+    bool IsInChannelMapRange(int file_id, int channel);
+    bool HasValidChannelMapTiles(int file_id, const CARTA::AddRequiredTiles& required_tiles);
+    bool GetValidChannelMapTiles(int file_id, const CARTA::AddRequiredTiles& required_tiles, std::vector<int>& valid_tiles);
+
     // uWebSockets
     uWS::WebSocket<false, true, PerSocketData>* _socket;
     uWS::Loop* _loop;
 
     uint32_t _id;
     std::string _address;
-    std::string _top_level_folder;
-    std::string _starting_folder;
-    bool _read_only_mode;
-    bool _enable_scripting;
 
     // File browser
     std::shared_ptr<FileListHandler> _file_list_handler;
@@ -300,7 +287,11 @@ protected:
 
     // Frame; key is file_id; shared with RegionHandler for data streams
     std::unordered_map<int, std::shared_ptr<Frame>> _frames;
+    int _last_file_id;
     std::mutex _frame_mutex;
+
+    // Suffix for opening multiple remote files
+    int _remote_file_index;
 
     const std::unique_ptr<TableController> _table_controller;
 
@@ -314,9 +305,11 @@ protected:
     // Individual stokes files connector
     std::unique_ptr<StokesFilesConnector> _stokes_files_connector;
 
-    // Manage image channel/z
+    // Manage image channel and channel maps. Key is file_id.
     std::unordered_map<int, std::mutex> _image_channel_mutexes;
     std::unordered_map<int, bool> _image_channel_task_active;
+    std::unique_ptr<ChannelMapSettings> _channel_map_settings;
+    std::unordered_map<int, int> _channel_map_received_channel;
 
     // Cube histogram progress: 0.0 to 1.0 (complete)
     float _histogram_progress;
@@ -348,8 +341,13 @@ protected:
 
     // Timestamp for the last protobuf message
     std::chrono::high_resolution_clock::time_point _last_message_timestamp;
+
+    // Parameters which are copied from the global settings
+    std::string _top_level_folder;
+    bool _read_only_mode;
+    bool _enable_scripting;
 };
 
 } // namespace carta
 
-#endif // CARTA_BACKEND__SESSION_H_
+#endif // CARTA_SRC_SESSION_SESSION_H_

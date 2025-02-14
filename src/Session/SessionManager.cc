@@ -1,5 +1,5 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
@@ -87,8 +87,7 @@ void SessionManager::OnConnect(WSType* ws) {
 
     // create a Session
     std::unique_lock<std::mutex> ulock(_sessions_mutex);
-    _sessions[session_id] = new Session(ws, loop, session_id, address, _settings.top_level_folder, _settings.starting_folder,
-        _file_list_handler, _settings.read_only_mode, _settings.enable_scripting);
+    _sessions[session_id] = new Session(ws, loop, session_id, address, _file_list_handler);
 
     _sessions[session_id]->IncreaseRefCount();
 
@@ -96,10 +95,9 @@ void SessionManager::OnConnect(WSType* ws) {
 }
 
 void SessionManager::OnDisconnect(WSType* ws, int code, std::string_view message) {
-    // Skip server-forced disconnects
-
     spdlog::debug("WebSocket closed with code {} and message '{}'.", code, message);
 
+    // Skip server-forced disconnects
     if (code == 4003) {
         return;
     }
@@ -508,6 +506,22 @@ void SessionManager::OnMessage(WSType* ws, std::string_view sv_message, uWS::OpC
                     CARTA::ClosePvPreview message;
                     if (message.ParseFromArray(event_buf, event_length)) {
                         session->OnClosePvPreview(message);
+                        message_parsed = true;
+                    }
+                    break;
+                }
+                case CARTA::EventType::REMOTE_FILE_REQUEST: {
+                    CARTA::RemoteFileRequest message;
+                    if (message.ParseFromArray(event_buf, event_length)) {
+                        session->OnRemoteFileRequest(message, head.request_id);
+                        message_parsed = true;
+                    }
+                    break;
+                }
+                case CARTA::EventType::CHANNEL_MAP_FLOW_CONTROL: {
+                    CARTA::ChannelMapFlowControl message;
+                    if (message.ParseFromArray(event_buf, event_length)) {
+                        session->HandleChannelMapFlowControlEvt(message);
                         message_parsed = true;
                     }
                     break;

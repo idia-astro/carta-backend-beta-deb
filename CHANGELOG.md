@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0-beta.1]
+
+### Added
+* Add support for PV image generation along a polyline region ([#1341](https://github.com/CARTAvis/carta-backend/issues/1341)).
+* Add support for loading remote FITS files from the hips2fits server ([#1379](https://github.com/CARTAvis/carta-backend/issues/1379)).
+* Add support for setting rest frequency for moment image generation ([#1385](https://github.com/CARTAvis/carta-backend/issues/1385)).
+* Added support for channel maps ([#1186](https://github.com/CARTAvis/carta-backend/issues/1186)).
+
+### Fixed
+* Fix crash when loading non-image HDU by URL ([#1365](https://github.com/CARTAvis/carta-backend/issues/1365)).
+* Fix crash when parsing FITS header long value ([#1366](https://github.com/CARTAvis/carta-backend/issues/1366)).
+* Fix incorrect parsing of SPECSYS value for ATCA FITS header ([#1375](https://github.com/CARTAvis/carta-backend/issues/1375)).
+* Fix hdf5 image distortion after animation stops ([#1368](https://github.com/CARTAvis/carta-backend/issues/1368)).
+* Fix matched polygon region approximation crash ([#1383](https://github.com/CARTAvis/carta-backend/issues/1383)).
+* Fix save image/export regions bug which could cause directory overwrite or deletion ([#1377](https://github.com/CARTAvis/carta-backend/issues/1377)).
+* Fix bug in cache slicer transformation which affects some images with rotated axes ([#1389](https://github.com/CARTAvis/carta-backend/pull/1389)).
+* Fix bug accessing top (root) folder of file browser ([#2354](https://github.com/CARTAvis/carta-frontend/issues/2354)).
+* Fix crash when spatially matching two images ([#1395](https://github.com/CARTAvis/carta-backend/issues/1395)).
+* Fix segfault after early exit ([#1382](https://github.com/CARTAvis/carta-backend/issues/1382)).
+
+### Changed
+* Move the loader cache to separate files ([#1021](https://github.com/CARTAvis/carta-backend/issues/1021)).
+* Improve the code style in HTTP server ([#1260](https://github.com/CARTAvis/carta-backend/issues/1260)).
+* Remove program settings equality operators ([#1001](https://github.com/CARTAvis/carta-backend/issues/1001)).
+* Normalize the style of guard names in header files ([#1023](https://github.com/CARTAvis/carta-backend/issues/1023)).
+* Improved file IDs for generated images ([#1224](https://github.com/CARTAvis/carta-frontend/issues/1224)).
+* Store global settings in a singleton class ([#1302](https://github.com/CARTAvis/carta-backend/issues/1302)).
+* Move Region code to RegionConverter for maintenance and performance ([#1347](https://github.com/CARTAvis/carta-backend/issues/1347)).
+* Improve performance of region spatial profiles and PV image generation ([#1339](https://github.com/CARTAvis/carta-backend/issues/1339)).
+
 ## [4.1.0]
 
 ### Fixed
@@ -20,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 * Support animation playback with matched images in multi-panel view ([#1860](https://github.com/CARTAvis/carta-frontend/issues/1860)).
+* Update the submodule uWebSockets ([#1297](https://github.com/CARTAvis/carta-backend/issues/1297)).
 
 ### Fixed
 * Prevent the installation of pugixml library files ([#1261](https://github.com/CARTAvis/carta-backend/issues/1261)).

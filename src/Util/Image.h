@@ -1,11 +1,11 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND__UTIL_IMAGE_H_
-#define CARTA_BACKEND__UTIL_IMAGE_H_
+#ifndef CARTA_SRC_UTIL_IMAGE_H_
+#define CARTA_SRC_UTIL_IMAGE_H_
 
 #include <cmath>
 #include <functional>
@@ -14,6 +14,8 @@
 #include <carta-protobuf/defs.pb.h>
 #include <carta-protobuf/enums.pb.h>
 #include <carta-protobuf/vector_overlay_tile.pb.h>
+
+#include <casacore/casa/Arrays/IPosition.h>
 
 #include "DataStream/Tile.h"
 
@@ -84,6 +86,9 @@ struct AxisRange {
         }
         return false;
     }
+    bool is_in_range(int val) {
+        return val >= from && val <= to;
+    }
 };
 
 struct PointXy {
@@ -123,4 +128,38 @@ struct PointXy {
     }
 };
 
-#endif // CARTA_BACKEND__UTIL_IMAGE_H_
+struct AxesInfo {
+    int x, y, spatial_x, spatial_y, spectral, z, stokes;
+
+    AxesInfo() : x(-1), y(-1), spatial_x(-1), spatial_y(-1), spectral(-1), z(-1), stokes(-1) {}
+    AxesInfo(const std::vector<int> render, const std::vector<int> spatial, int spectral)
+        : x(render[0]), y(render[1]), spatial_x(spatial[0]), spatial_y(spatial[1]), spectral(spectral), z(-1), stokes(-1) {}
+    AxesInfo(const std::vector<int> render, std::vector<int> spatial, int spectral, int z, int stokes)
+        : x(render[0]), y(render[1]), spatial_x(spatial[0]), spatial_y(spatial[1]), spectral(spectral), z(z), stokes(stokes) {}
+
+    std::vector<int> Render() {
+        return {x, y};
+    }
+
+    std::vector<int> Spatial() {
+        return {spatial_x, spatial_y};
+    }
+};
+
+struct DimsInfo {
+    size_t width, height, depth, num_channels, num_stokes;
+
+    static size_t FromAxis(int axis, const casacore::IPosition& shape) {
+        return axis >= 0 ? shape(axis) : 1;
+    }
+
+    DimsInfo() : width(1), height(1), depth(1), num_channels(1), num_stokes(1) {}
+    DimsInfo(const AxesInfo& axes, const casacore::IPosition& shape)
+        : width(FromAxis(axes.x, shape)),
+          height(FromAxis(axes.y, shape)),
+          depth(FromAxis(axes.z, shape)),
+          num_channels(FromAxis(axes.spectral, shape)),
+          num_stokes(FromAxis(axes.stokes, shape)) {}
+};
+
+#endif // CARTA_SRC_UTIL_IMAGE_H_

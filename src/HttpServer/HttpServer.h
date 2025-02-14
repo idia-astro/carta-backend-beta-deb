@@ -1,11 +1,11 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND_SRC_HTTPSERVER_HTTPSERVER_H_
-#define CARTA_BACKEND_SRC_HTTPSERVER_HTTPSERVER_H_
+#ifndef CARTA_SRC_HTTPSERVER_HTTPSERVER_H_
+#define CARTA_SRC_HTTPSERVER_HTTPSERVER_H_
 
 #include <chrono>
 #include <string>
@@ -40,7 +40,7 @@ class HttpServer {
 public:
     HttpServer(std::shared_ptr<SessionManager> session_manager, fs::path root_folder, fs::path user_directory, std::string auth_token,
         bool read_only_mode = false, bool enable_frontend = true, bool enable_database = true, bool enable_scripting = false,
-        bool enable_runtime_config = true);
+        bool enable_runtime_config = true, std::string url_prefix = "");
     bool CanServeFrontend() {
         return _frontend_found;
     }
@@ -96,9 +96,10 @@ private:
     bool _enable_database;
     bool _enable_scripting;
     bool _enable_runtime_config;
+    std::string _url_prefix;
     std::shared_ptr<SessionManager> _session_manager;
     static uint32_t _scripting_request_id;
 };
 
 } // namespace carta
-#endif // CARTA_BACKEND_SRC_HTTPSERVER_HTTPSERVER_H_
+#endif // CARTA_SRC_HTTPSERVER_HTTPSERVER_H_

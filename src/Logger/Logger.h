@@ -1,11 +1,11 @@
 /* This file is part of the CARTA Image Viewer: https://github.com/CARTAvis/carta-backend
-   Copyright 2018-2022 Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
+   Copyright 2018- Academia Sinica Institute of Astronomy and Astrophysics (ASIAA),
    Associated Universities, Inc. (AUI) and the Inter-University Institute for Data Intensive Astronomy (IDIA)
    SPDX-License-Identifier: GPL-3.0-or-later
 */
 
-#ifndef CARTA_BACKEND_LOGGER_LOGGER_H_
-#define CARTA_BACKEND_LOGGER_LOGGER_H_
+#ifndef CARTA_SRC_LOGGER_LOGGER_H_
+#define CARTA_SRC_LOGGER_LOGGER_H_
 
 #include <iostream>
 
@@ -110,11 +110,11 @@ private:
 
 namespace carta {
 namespace logger {
-void InitLogger(bool no_log_file, int verbosity, bool log_performance, bool log_protocol_messages_, fs::path user_directory);
+void InitLogger();
 void LogReceivedEventType(const CARTA::EventType& event_type);
 void LogSentEventType(const CARTA::EventType& event_type);
 void FlushLogFile();
 } // namespace logger
 } // namespace carta
 
-#endif // CARTA_BACKEND_LOGGER_LOGGER_H_
+#endif // CARTA_SRC_LOGGER_LOGGER_H_
