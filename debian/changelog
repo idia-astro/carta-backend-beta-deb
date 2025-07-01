@@ -21,7 +21,7 @@ carta-backend-beta (5.0+2025.7.1-1~noble1) noble; urgency=medium
 
  -- Adrianna Pińska <adrianna.pinska@gmail.com>  Tue, 01 Jul 2025 16:14:51 +0200
 
- carta-backend-beta (5.0+2025.2.14-1~noble1) noble; urgency=medium
+carta-backend-beta (5.0+2025.2.14-1~noble1) noble; urgency=medium
 
   * First Noble build.
 
