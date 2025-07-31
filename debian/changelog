@@ -1,4 +1,4 @@
-carta-backend-beta (5.0+2025.7.31-1~jammy1) noble; urgency=medium
+carta-backend-beta (5.0+2025.7.31-1~noble1) noble; urgency=medium
 
   * Bumped version to 5.0.3 to sync with frontend.
   * Bumped version to 5.0.2.
